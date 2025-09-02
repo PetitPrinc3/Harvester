@@ -1,0 +1,8 @@
+selenium
+telethon
+python-dotenv
+requests
+beautifulsoup4
+thefuzz
+python-Levenshtein
+tqdm
