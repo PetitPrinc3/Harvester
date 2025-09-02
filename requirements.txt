@@ -6,3 +6,4 @@ beautifulsoup4
 thefuzz
 python-Levenshtein
 tqdm
+Flask

@@ -1,5 +1,7 @@
 # Environment variables
 .env
+*.log
+*.db
 
 # Telegram session files
 *.session
