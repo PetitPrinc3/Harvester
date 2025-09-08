@@ -1,10 +1,8 @@
 # Harvester
 
-![Google Gemini - CLI](https://img.shields.io/badge/Google%20Gemini-CLI-4A8AF4?style=for-the-badge&logo=google-gemini&logoColor=white)
-
 Harvester is a self-hosted download manager for `1fichier.com`, designed for seamless, unattended operation. It features a modern web interface, a powerful Telegram bot for link submission, and a resilient download queue that automatically handles wait times and retries.
 
-![Harvester Queue UI](https://i.imgur.com/example.png) *(Image placeholder: A screenshot of the web UI's queue page would be ideal here)*
+![Harvester Queue UI](./WebUI.png) *(Image placeholder: A screenshot of the web UI's queue page would be ideal here)*
 
 ## Key Features
 
