@@ -52,5 +52,5 @@ The application is fully containerized with Docker for easy setup and deployment
 ---
 
 <p align="center">
-  Built with ❤️ by Google Gemini - CLI
+  Vibe-coded with ❤️ by Google Gemini - CLI
 </p>

@@ -9,6 +9,7 @@ import re
 import os
 import requests
 import logging
+from datetime import datetime
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +30,30 @@ class FichierDownloader:
         self.options.add_argument("--no-sandbox")
         self.options.add_argument("--disable-dev-shm-usage")
 
+    def _save_error_debug_info(self):
+        """Saves a screenshot and page source to a timestamped debug folder."""
+        if not self.driver:
+            return
+        try:
+            debug_dir = os.path.join(os.getcwd(), "debug_reports")
+            if not os.path.exists(debug_dir):
+                os.makedirs(debug_dir)
+            
+            timestamp = datetime.now().strftime('%Y_%m_%d_%H_%M_%S')
+            error_folder = os.path.join(debug_dir, f"error_{timestamp}")
+            os.makedirs(error_folder)
+
+            screenshot_path = os.path.join(error_folder, 'screenshot.png')
+            self.driver.save_screenshot(screenshot_path)
+
+            html_path = os.path.join(error_folder, 'page.html')
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(self.driver.page_source)
+            
+            log.info(f"Saved debug info to {error_folder}")
+        except Exception as e:
+            log.error(f"Failed to save debug info: {e}")
+
     def start_session(self):
         if not self.driver:
             log.info("Starting new browser session...")
@@ -46,43 +71,44 @@ class FichierDownloader:
 
         try:
             status_callback("processing")
-            while True:
-                log.info(f"Navigating to {url}")
-                self.driver.get(url)
+            self.driver.get(url)
 
-                try:
-                    cookie_button = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, 'cmpboxbtnyes')))
-                    self.driver.execute_script("arguments[0].click();", cookie_button)
-                except TimeoutException:
-                    pass
+            try:
+                cookie_button = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, 'cmpboxbtnyes')))
+                self.driver.execute_script("arguments[0].click();", cookie_button)
+            except TimeoutException:
+                pass
 
-                page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+            page_text = self.driver.find_element(By.TAG_NAME, 'body').text
 
-                if "Le fichier demandé n'existe pas" in page_text or "a été supprimé" in page_text:
-                    log.error("File does not exist or has been deleted.")
-                    status_callback("failed")
-                    return False
+            if "Le fichier demandé n'existe pas" in page_text or "a été supprimé" in page_text:
+                log.error("File does not exist or has been deleted.")
+                status_callback("failed")
+                return False
 
-                if "vous devez attendre entre chaque téléchargement" in page_text:
-                    log.warning(f"Wait condition detected. Waiting for {self.wait_time_seconds / 60} minutes...")
-                    status_callback("pending")
-                    time.sleep(self.wait_time_seconds)
-                    continue
+            if "vous devez attendre entre chaque téléchargement" in page_text:
+                log.warning(f"Wait condition detected. Waiting for {self.wait_time_seconds / 60} minutes...")
+                status_callback("pending")
+                time.sleep(self.wait_time_seconds)
+                # After waiting, we need to retry the whole process for this URL
+                return self.download_file(url, status_callback)
 
-                log.info("Page seems valid, proceeding with download logic...")
-                download_url = self._get_final_download_link(status_callback)
-                
-                if download_url:
-                    self._download_from_link(download_url, status_callback)
-                    status_callback("done", progress=100)
-                    return True
-                else:
-                    log.error("Could not extract the final download link.")
-                    status_callback("failed")
-                    return False
+            log.info("Page seems valid, proceeding with download logic...")
+            download_url = self._get_final_download_link(status_callback)
+            
+            if download_url:
+                self._download_from_link(download_url, status_callback)
+                status_callback("done", progress=100)
+                return True
+            else:
+                log.error("Could not extract the final download link.")
+                self._save_error_debug_info()
+                status_callback("failed")
+                return False
 
         except Exception as e:
             log.error(f"An unexpected error occurred: {e}", exc_info=True)
+            self._save_error_debug_info()
             status_callback("failed")
             return False
 
@@ -162,9 +188,8 @@ def get_filename_from_url(url):
         except TimeoutException:
             log.info("Cookie consent button not found, proceeding anyway.")
 
-        
         selector = 'form table.premium td.normal span[style*="font-weight:bold"]'
-        
+                
         wait = WebDriverWait(driver, 10)
         filename_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
         

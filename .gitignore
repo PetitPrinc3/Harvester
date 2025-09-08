@@ -2,6 +2,7 @@
 .env
 *.log
 *.db
+venv/
 
 # Telegram session files
 *.session

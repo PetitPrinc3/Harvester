@@ -11,6 +11,7 @@ __pycache__/
 downloads/
 *.db
 *.log
+debug_reports/
 
 # Ignore git directory
 .git/
