@@ -1,155 +1,214 @@
-import threading
-import time
-import collections
-import traceback
 import logging
-from flask import Flask, request, jsonify
+import time
+import threading
+import requests
+from bs4 import BeautifulSoup
+from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask_bootstrap import Bootstrap4
+from waitress import serve
+
 import database
 import logger_setup
-from telegram_parser import TelegramParser
-from zt_parser import ZTParser, select_best_movie, select_best_show
+from file_parser import parse_filename
 from fichier_dl import FichierDownloader
 
 # --- App Initialization ---
 logger_setup.setup_logging()
 log = logging.getLogger(__name__)
 
+# --- Logging Filter ---
+class ApiQueueLogFilter(logging.Filter):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.seen_ips = set()
+
+    def filter(self, record):
+        message = record.getMessage()
+        if 'GET /api/queue' in message:
+            try:
+                ip = message.split(' - - ')[0]
+                if ip in self.seen_ips:
+                    return False  # Suppress log
+                else:
+                    self.seen_ips.add(ip)
+                    # You can customize the log message for the first connection if you want
+                    # For example: record.msg = f"New viewer connected from {ip}"
+                    return True # Allow log for the first time
+            except IndexError:
+                return True # Log if format is unexpected
+        return True # Allow all other logs
+
+# Add the filter to the Werkzeug logger, which handles request logs
+logging.getLogger("werkzeug").addFilter(ApiQueueLogFilter())
+
+
 app = Flask(__name__)
+Bootstrap4(app)
+
 database.init_db()
 
-# In-memory queue for download tasks
-download_queue = collections.deque()
+# --- Web Pages ---
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/queue')
+def queue():
+    return render_template('queue.html')
+
+# --- API Endpoints ---
+
+@app.route('/submit', methods=['POST'])
+def submit_links():
+    links = request.form.get('links', '').strip().splitlines()
+    if not links:
+        return redirect(url_for('index'))
+
+    for link in links:
+        if '1fichier.com' not in link:
+            continue
+        
+        filename = get_filename_from_url(link)
+
+        if not filename:
+            log.error(f"Could not determine filename for link using Selenium: {link}")
+            continue
+
+        media_info = parse_filename(filename)
+
+        request_id = database.add_request(
+            media_info.get('title', 'Unknown Title'), 
+            media_info.get('type', 'unknown'), 
+            media_info.get('season')
+        )
+        
+        with database.get_db_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO downloads (request_id, episode_number, quality, language, fichier_link, status) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    request_id, 
+                    media_info.get('episode'), 
+                    media_info.get('quality'), 
+                    media_info.get('language'), 
+                    link, 
+                    'queued'
+                )
+            )
+            conn.commit()
+
+    return redirect(url_for('queue'))
+
+@app.route('/api/queue', methods=['GET'])
+def get_queue():
+    downloads = database.get_all_downloads()
+    return jsonify(downloads)
+
+@app.route('/api/downloads/<int:download_id>/delete', methods=['POST'])
+def delete_download_api(download_id):
+    database.delete_download(download_id)
+    log.info(f"Deleted download {download_id} via API.")
+    return jsonify({"message": "Download deleted"})
+
+@app.route('/api/downloads/<int:download_id>/priority', methods=['POST'])
+def change_priority_api(download_id):
+    data = request.get_json()
+    direction = data.get('direction')
+
+    if direction not in ['up', 'down']:
+        return jsonify({"error": "Invalid direction"}), 400
+
+    all_downloads = database.get_all_downloads()
+    
+    try:
+        current_index = next(i for i, d in enumerate(all_downloads) if d['id'] == download_id)
+    except StopIteration:
+        return jsonify({"error": "Download not found"}), 404
+
+    item_to_move = all_downloads[current_index]
+
+    if direction == 'up':
+        if current_index == 0:
+            return jsonify({"message": "Already at top"})
+        
+        neighbor = all_downloads[current_index - 1]
+        
+        database.update_download_priority(neighbor['id'], item_to_move['priority'])
+        database.update_download_priority(item_to_move['id'], neighbor['priority'])
+
+    elif direction == 'down':
+        if current_index == len(all_downloads) - 1:
+            return jsonify({"message": "Already at bottom"})
+            
+        neighbor = all_downloads[current_index + 1]
+
+        database.update_download_priority(neighbor['id'], item_to_move['priority'])
+        database.update_download_priority(item_to_move['id'], neighbor['priority'])
+
+    return jsonify({"message": "Priority updated"})
 
 # --- Background Tasks --- #
 
-def process_request_task(request_id, request_data):
-    """Background task with robust error logging."""
-    try:
-        log.info(f"[Task {request_id}]: Starting background processing.")
-        database.update_request_status(request_id, 'searching')
-        
-        log.info(f"[Task {request_id}]: Fetching website URL from Telegram...")
-        tg_parser = TelegramParser()
-        base_url = tg_parser.find_latest_zt_link()
-        if not base_url:
-            log.error(f"[Task {request_id}]: Could not retrieve website URL. Aborting.")
-            database.update_request_status(request_id, 'failed')
-            return
-
-        log.info(f"[Task {request_id}]: Searching for media...")
-        zt_parser = ZTParser(base_url=base_url)
-        search_results = zt_parser.search(request_data['title'], 'series' if request_data['type'] == 'tv_show' else 'films')
-        
-        best_media = None
-        if request_data['type'] == 'tv_show':
-            best_media = select_best_show(zt_parser, search_results, request_data['title'], request_data['season'])
-        else:
-            best_media = select_best_movie(zt_parser, search_results, request_data['title'])
-
-        if not best_media:
-            log.error(f"[Task {request_id}]: Could not find a suitable media version. Aborting.")
-            database.update_request_status(request_id, 'failed')
-            return
-
-        log.info(f"[Task {request_id}]: Found best media. Adding download links to database.")
-        database.add_download_links(request_id, best_media)
-        database.update_request_status(request_id, 'emitted')
-        log.info(f"[Task {request_id}]: Processing complete. Waiting for user to submit links.")
-
-    except Exception as e:
-        log.error(f"[Task {request_id}]: An unhandled exception occurred in the background task!", exc_info=True)
-        database.update_request_status(request_id, 'failed')
-
 def download_worker():
-    """Background worker that uses a persistent browser session."""
     log.info("[Worker]: Download worker thread started.")
+    time.sleep(5)
     downloader = FichierDownloader()
     downloader.start_session()
 
     try:
         while True:
-            try:
-                download_id = download_queue.popleft()
-            except IndexError:
-                time.sleep(5)
+            pending_downloads = database.get_pending_downloads()
+            if not pending_downloads:
+                time.sleep(10)
                 continue
 
-            download_job = database.get_download_by_id(download_id)
-            if not download_job or not download_job['fichier_link']:
+            download_job = pending_downloads[0]
+            
+            if download_job['status'] != 'queued':
                 continue
+
+            log.info(f"[Worker]: Starting job {download_job['id']} for link: {download_job['fichier_link']}")
 
             def status_callback(status, progress=None):
-                # Only log significant status changes, not every progress update
-                if status != 'downloading' or progress == 0:
-                    log.info(f"[Job {download_id}]: Status -> {status}")
-                database.update_download_status(download_id, status, progress)
+                if status != 'downloading' or progress == 0 or progress == 100:
+                    log.info(f"[Job {download_job['id']}]: Status -> {status}, Progress -> {progress}%")
+                database.update_download_status(download_job['id'], status, progress)
 
-            log.info(f"[Worker]: Starting job {download_id}...")
-            downloader.download_file(download_job['fichier_link'], status_callback)
-            log.info(f"[Worker]: Finished processing job {download_id}.")
+            try:
+                database.update_download_status(download_job['id'], 'processing')
+                success = downloader.download_file(download_job['fichier_link'], status_callback)
+                
+                if success:
+                    log.info(f"[Worker]: Finished processing job {download_job['id']}.")
+                    database.update_download_status(download_job['id'], 'completed', 100)
+                else:
+                    log.warning(f"[Worker]: Job {download_job['id']} failed. Checking retry count.")
+                    database.increment_retry_count(download_job['id'])
+                    job_info = database.get_download_by_id(download_job['id'])
+                    if job_info['retries'] > 1:
+                        log.error(f"[Worker]: Job {download_job['id']} has exceeded max retries. Marking as failed.")
+                        database.update_download_status(download_job['id'], 'failed')
+                    else:
+                        log.info(f"[Worker]: Job {download_job['id']} will be retried. Resetting status to queued.")
+                        database.update_download_status(download_job['id'], 'queued')
+
+            except Exception as e:
+                log.error(f"[Worker]: An unexpected error occurred while processing job {download_job['id']}: {e}", exc_info=True)
+                database.update_download_status(download_job['id'], 'failed')
+                continue
+
     finally:
         downloader.stop_session()
-
-# --- API Endpoints ---
-
-@app.route('/request', methods=['POST'])
-def create_request():
-    data = request.get_json()
-    if not data or 'title' not in data or 'type' not in data:
-        return jsonify({"error": "Invalid request. Must include 'title' and 'type'"}), 400
-    
-    media_type = data['type']
-    if media_type not in ['movie', 'tv_show']:
-        return jsonify({"error": "Invalid type. Must be 'movie' or 'tv_show'"}), 400
-        
-    if media_type == 'tv_show' and 'season' not in data:
-        return jsonify({"error": "TV show requests must include a 'season' number"}), 400
-
-    try:
-        request_id = database.add_request(data['title'], data['type'], data.get('season'))
-        log.info(f"New request created with ID: {request_id}")
-        thread = threading.Thread(target=process_request_task, args=(request_id, data), name=f"Task-{request_id}")
-        thread.start()
-        return jsonify({"message": "Request received", "request_id": request_id}), 202
-    except Exception as e:
-        log.error("Error creating request in /request endpoint", exc_info=True)
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/submit', methods=['POST'])
-def submit_links():
-    data = request.get_json()
-    if not data or 'downloads' not in data or not isinstance(data['downloads'], list):
-        return jsonify({"error": "Invalid request. Body must be a JSON with a 'downloads' list."}), 400
-
-    request_id = None
-    for item in data['downloads']:
-        if 'id' in item and 'fichier_link' in item:
-            log.info(f"Queuing download for ID: {item['id']}")
-            database.update_download_with_fichier_link(item['id'], item['fichier_link'])
-            download_queue.append(item['id'])
-            if not request_id:
-                job = database.get_download_by_id(item['id'])
-                if job:
-                    request_id = job['request_id']
-    
-    if request_id:
-        database.update_request_status(request_id, 'queued')
-
-    return jsonify({"message": f"{len(data['downloads'])} links queued for download."}), 200
-
-@app.route('/status/<int:request_id>', methods=['GET'])
-def get_status(request_id):
-    status_data = database.get_request_status(request_id)
-    if not status_data:
-        return jsonify({"error": "Request ID not found"}), 404
-    return jsonify(status_data)
 
 # --- Main Execution ---
 
 if __name__ == '__main__':
+    database.reset_stale_downloads()
+
     worker_thread = threading.Thread(target=download_worker, name="DownloadWorker")
     worker_thread.daemon = True
     worker_thread.start()
 
-    log.info("Starting Flask application server...")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    log.info("Starting production server on http://0.0.0.0:5000")
+    serve(app, host='0.0.0.0', port=5000)

@@ -7,3 +7,5 @@ thefuzz
 python-Levenshtein
 tqdm
 Flask
+bootstrap-flask
+waitress

@@ -45,12 +45,14 @@ class FichierDownloader:
             raise Exception("Browser session not started. Call start_session() first.")
 
         try:
+            status_callback("processing")
             while True:
                 log.info(f"Navigating to {url}")
                 self.driver.get(url)
 
                 try:
-                    WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, 'cmpboxbtnyes'))).click()
+                    cookie_button = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, 'cmpboxbtnyes')))
+                    self.driver.execute_script("arguments[0].click();", cookie_button)
                 except TimeoutException:
                     pass
 
@@ -72,7 +74,7 @@ class FichierDownloader:
                 
                 if download_url:
                     self._download_from_link(download_url, status_callback)
-                    status_callback("done", progress=100) # Ensure final status is 100%
+                    status_callback("done", progress=100)
                     return True
                 else:
                     log.error("Could not extract the final download link.")
@@ -133,9 +135,48 @@ class FichierDownloader:
                             status_callback("downloading", progress=round(progress, 2))
                             last_reported_progress = progress
             
-            # Ensure progress is marked as 100% after successful download
-            status_callback("downloading", progress=100)
+            status_callback("done", progress=100)
             log.info(f"File downloaded successfully to {filepath}")
         except requests.exceptions.RequestException as e:
             log.error(f"An error occurred during download: {e}")
             raise
+
+def get_filename_from_url(url):
+    """Uses a temporary Selenium session to get the filename from a 1fichier URL."""
+    log.info(f"Using Selenium to get filename from {url}")
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    driver = None
+    try:
+        driver = webdriver.Chrome(options=options)
+        driver.get(url)
+
+        try:
+            cookie_button = WebDriverWait(driver, 5).until(EC.presence_of_element_located((By.CLASS_NAME, 'cmpboxbtnyes')))
+            driver.execute_script("arguments[0].click();", cookie_button)
+            log.info("Clicked the cookie consent button.")
+        except TimeoutException:
+            log.info("Cookie consent button not found, proceeding anyway.")
+
+        
+        selector = 'form table.premium td.normal span[style*="font-weight:bold"]'
+        
+        wait = WebDriverWait(driver, 10)
+        filename_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
+        
+        filename = filename_element.text
+        log.info(f"Successfully extracted filename: {filename}")
+        return filename
+    except TimeoutException:
+        log.error(f"Timed out waiting for filename element with selector: {selector}")
+        return None
+    except Exception as e:
+        log.error(f"An unexpected error occurred in get_filename_from_url: {e}", exc_info=True)
+        return None
+    finally:
+        if driver:
+            driver.quit()

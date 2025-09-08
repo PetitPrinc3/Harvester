@@ -34,6 +34,8 @@ def init_db():
                 fichier_link TEXT,
                 status TEXT NOT NULL,
                 download_progress REAL DEFAULT 0,
+                retries INTEGER DEFAULT 0,
+                priority INTEGER DEFAULT 0,
                 FOREIGN KEY (request_id) REFERENCES requests (id)
             )
         ''')
@@ -45,7 +47,7 @@ def add_request(title, media_type, season=None):
         cursor = conn.cursor()
         cursor.execute(
             "INSERT INTO requests (title, season, type, status) VALUES (?, ?, ?, ?)",
-            (title, season, media_type, 'received')
+            (title, season, media_type, 'analyzing')
         )
         conn.commit()
         return cursor.lastrowid
@@ -109,6 +111,72 @@ def get_download_by_id(download_id):
         cursor.execute("SELECT * FROM downloads WHERE id = ?", (download_id,))
         result = cursor.fetchone()
         return dict(result) if result else None
+
+def get_all_requests():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM requests ORDER BY timestamp DESC")
+        requests = [dict(row) for row in cursor.fetchall()]
+        return requests
+
+def get_downloads_for_request(request_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM downloads WHERE request_id = ?", (request_id,))
+        downloads = [dict(row) for row in cursor.fetchall()]
+        return downloads
+
+def get_request_by_id(request_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM requests WHERE id = ?", (request_id,))
+        result = cursor.fetchone()
+        return dict(result) if result else None
+
+def get_all_downloads():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT d.*, r.title, r.type as request_type, r.season
+            FROM downloads d
+            JOIN requests r ON d.request_id = r.id
+            ORDER BY d.priority DESC, d.id ASC
+        """)
+        downloads = [dict(row) for row in cursor.fetchall()]
+        return downloads
+
+
+def get_pending_downloads():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM downloads WHERE status = 'queued' ORDER BY priority DESC, id ASC")
+        downloads = [dict(row) for row in cursor.fetchall()]
+        return downloads
+
+def reset_stale_downloads():
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE downloads SET status = 'queued', download_progress = 0 WHERE status IN ('downloading', 'processing', 'pending')")
+        conn.commit()
+        log.info(f"{cursor.rowcount} stale downloads have been reset to 'queued'.")
+
+def update_download_priority(download_id, priority):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE downloads SET priority = ? WHERE id = ?", (priority, download_id))
+        conn.commit()
+
+def delete_download(download_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM downloads WHERE id = ?", (download_id,))
+        conn.commit()
+
+def increment_retry_count(download_id):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("UPDATE downloads SET retries = retries + 1 WHERE id = ?", (download_id,))
+        conn.commit()
 
 if __name__ == '__main__':
     import logger_setup
