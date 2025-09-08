@@ -48,3 +48,9 @@ The application is fully containerized with Docker for easy setup and deployment
 2.  **Submit Links**: Paste your `1fichier.com` links into the text area and click "Submit".
 
 3.  **Manage Queue**: Navigate to the "Download Queue" page to view progress, reorder items, and manage your downloads.
+
+---
+
+<p align="center">
+  Built with ❤️ by Google Gemini - CLI
+</p>
