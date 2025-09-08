@@ -3,145 +3,187 @@
 {% block title %}Download Queue{% endblock %}
 
 {% block styles %}
-    {{ super() }}
-    <style>
-        .table-fixed-layout {
-            table-layout: fixed;
-            width: 100%;
-        }
-        .col-title { width: 40%; }
-        .col-season { width: 10%; text-align: center; }
-        .col-episode { width: 10%; text-align: center; }
-        .col-status { width: 20%; }
-        .col-actions { width: 20%; }
+{{ super() }}
+<style>
+    .table-fixed-layout {
+        table-layout: fixed;
+        width: 100%;
+    }
 
-        .col-title > div {
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+    .col-title {
+        width: 40%;
+    }
+
+    .col-season {
+        width: 10%;
+        text-align: center;
+    }
+
+    .col-episode {
+        width: 10%;
+        text-align: center;
+    }
+
+    .col-status {
+        width: 20%;
+    }
+
+    .col-actions {
+        width: 20%;
+    }
+
+    .col-title>div {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    @media (max-width: 768px) {
+
+        .col-season,
+        .col-episode {
+            display: none;
         }
 
-        @media (max-width: 768px) {
-            .col-season, .col-episode {
-                display: none;
-            }
-            .col-title {
-                width: 60%;
-            }
+        .col-title {
+            width: 60%;
         }
-    </style>
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>Download Queue</h2>
-        <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#filterModal">
-            Filter Queue
-        </button>
-    </div>
-    <div id="queue-table-container">
-        <p>Loading...</p>
-    </div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2>Download Queue</h2>
+    <button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#filterModal">
+        Filter Queue
+    </button>
+</div>
+<div id="queue-table-container">
+    <p>Loading...</p>
+</div>
 
-    <!-- Filter Modal -->
-    <div class="modal fade" id="filterModal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="filterModalLabel">Filter Downloads</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+<!-- Filter Modal -->
+<div class="modal fade" id="filterModal" tabindex="-1" aria-labelledby="filterModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="filterModalLabel">Filter Downloads</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <h5>Status</h5>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="queued"
+                            id="status-queued" checked> <label class="form-check-label"
+                            for="status-queued">Queued</label></div>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox"
+                            value="processing" id="status-processing" checked> <label class="form-check-label"
+                            for="status-processing">Processing</label></div>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox"
+                            value="pending" id="status-pending" checked> <label class="form-check-label"
+                            for="status-pending">Pending</label></div>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox"
+                            value="downloading" id="status-downloading" checked> <label class="form-check-label"
+                            for="status-downloading">Downloading</label></div>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="failed"
+                            id="status-failed" checked> <label class="form-check-label"
+                            for="status-failed">Failed</label></div>
+                    <div class="form-check"><input class="form-check-input status-filter" type="checkbox"
+                            value="completed" id="status-completed"> <label class="form-check-label"
+                            for="status-completed">Completed</label></div>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <h5>Status</h5>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="queued" id="status-queued" checked> <label class="form-check-label" for="status-queued">Queued</label></div>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="processing" id="status-processing" checked> <label class="form-check-label" for="status-processing">Processing</label></div>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="pending" id="status-pending" checked> <label class="form-check-label" for="status-pending">Pending</label></div>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="downloading" id="status-downloading" checked> <label class="form-check-label" for="status-downloading">Downloading</label></div>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="failed" id="status-failed" checked> <label class="form-check-label" for="status-failed">Failed</label></div>
-                        <div class="form-check"><input class="form-check-input status-filter" type="checkbox" value="completed" id="status-completed"> <label class="form-check-label" for="status-completed">Completed</label></div>
+                <hr>
+                <div>
+                    <h5>Type</h5>
+                    <div class="form-check"><input class="form-check-input type-filter" type="checkbox" value="movie"
+                            id="type-movie" checked> <label class="form-check-label" for="type-movie">Movie</label>
                     </div>
-                    <hr>
-                    <div>
-                        <h5>Type</h5>
-                        <div class="form-check"><input class="form-check-input type-filter" type="checkbox" value="movie" id="type-movie" checked> <label class="form-check-label" for="type-movie">Movie</label></div>
-                        <div class="form-check"><input class="form-check-input type-filter" type="checkbox" value="tv_show" id="type-tv_show" checked> <label class="form-check-label" for="type-tv_show">TV Show</label></div>
-                    </div>
+                    <div class="form-check"><input class="form-check-input type-filter" type="checkbox" value="tv_show"
+                            id="type-tv_show" checked> <label class="form-check-label" for="type-tv_show">TV
+                            Show</label></div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" id="apply-filters-btn">Apply Filters</button>
-                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="apply-filters-btn">Apply Filters</button>
             </div>
         </div>
     </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-    {{ super() }}
-    <script>
-        // Store the last fetched list of downloads globally
-        let currentDownloads = [];
+{{ super() }}
+<script>
+    // Store the last fetched list of downloads globally
+    let currentDownloads = [];
 
-        document.addEventListener('DOMContentLoaded', function () {
-            const queueContainer = document.getElementById('queue-table-container');
-            const statusFilters = document.querySelectorAll('.status-filter');
-            const typeFilters = document.querySelectorAll('.type-filter');
-            const applyFiltersBtn = document.getElementById('apply-filters-btn');
-            const filterModalEl = document.getElementById('filterModal');
-            const filterModal = new bootstrap.Modal(filterModalEl);
+    document.addEventListener('DOMContentLoaded', function () {
+        const queueContainer = document.getElementById('queue-table-container');
+        const statusFilters = document.querySelectorAll('.status-filter');
+        const typeFilters = document.querySelectorAll('.type-filter');
+        const applyFiltersBtn = document.getElementById('apply-filters-btn');
+        const filterModalEl = document.getElementById('filterModal');
+        const filterModal = new bootstrap.Modal(filterModalEl);
 
-            function getStatusBadge(status, progress) {
-                const colors = {
-                    success: '#95E082',
-                    danger: '#D97068',
-                    primary: '#57B9FF',
-                    secondary: '#6c757d'
-                };
+        function getStatusBadge(status, progress) {
+            const colors = {
+                success: '#95E082',
+                danger: '#D97068',
+                primary: '#57B9FF',
+                secondary: '#6c757d'
+            };
 
-                if (status === 'downloading') {
-                    const percent = Math.round(progress || 0);
-                    const style = `background: linear-gradient(to right, ${colors.success} ${percent}%, ${colors.secondary} ${percent}%); color: #000;`;
-                    return `<span class="badge" style="${style}">Downloading</span>`;
-                }
-                
-                let style = '';
-                let statusText = status;
-                switch (status) {
-                    case 'completed':
-                        style = `background-color: ${colors.success}; color: #000;`;
-                        statusText = 'Completed';
-                        break;
-                    case 'failed':
-                        style = `background-color: ${colors.danger};`;
-                        statusText = 'Failed';
-                        break;
-                    case 'queued':
-                    case 'pending':
-                    case 'processing':
-                        style = `background-color: ${colors.primary}; color: #000;`;
-                        statusText = 'Pending';
-                        break;
-                    default:
-                        style = `background-color: ${colors.secondary};`;
-                }
-                return `<span class="badge" style="${style}">${statusText}</span>`;
+            if (status === 'downloading') {
+                const percent = Math.round(progress || 0);
+                const style = `background: linear-gradient(to right, ${colors.success} ${percent}%, ${colors.secondary} ${percent}%); color: #000;`;
+                return `<span class="badge" style="${style}">Downloading</span>`;
             }
 
-            window.renderTable = function(downloads) {
-                const selectedStatuses = Array.from(statusFilters).filter(cb => cb.checked).map(cb => cb.value);
-                const selectedTypes = Array.from(typeFilters).filter(cb => cb.checked).map(cb => cb.value);
+            let style = '';
+            let statusText = status;
+            switch (status) {
+                case 'completed':
+                    style = `background-color: ${colors.success}; color: #000;`;
+                    statusText = 'Completed';
+                    break;
+                case 'failed':
+                    style = `background-color: ${colors.danger};`;
+                    statusText = 'Failed';
+                    break;
+                case 'queued':
+                    style = `background-color: ${colors.secondary}; color: #000;`;
+                    statusText = 'Queued';
+                    break;
+                case 'pending':
+                    style = `background-color: ${colors.primary}; color: #000;`;
+                    statusText = 'Pending';
+                    break;
+                case 'processing':
+                    style = `background-color: ${colors.primary}; color: #000;`;
+                    statusText = 'Processing';
+                    break;
+                default:
+                    style = `background-color: ${colors.secondary};`;
+            }
+            return `<span class="badge" style="${style}">${statusText}</span>`;
+        }
 
-                const filteredDownloads = downloads.filter(d => {
-                    return selectedStatuses.includes(d.status) && selectedTypes.includes(d.request_type);
-                });
+        window.renderTable = function (downloads) {
+            const selectedStatuses = Array.from(statusFilters).filter(cb => cb.checked).map(cb => cb.value);
+            const selectedTypes = Array.from(typeFilters).filter(cb => cb.checked).map(cb => cb.value);
 
-                if (filteredDownloads.length === 0) {
-                    queueContainer.innerHTML = '<div class="alert alert-info">No downloads match the current filter.</div>';
-                    return;
-                }
+            const filteredDownloads = downloads.filter(d => {
+                return selectedStatuses.includes(d.status) && selectedTypes.includes(d.request_type);
+            });
 
-                const table = `
+            if (filteredDownloads.length === 0) {
+                queueContainer.innerHTML = '<div class="alert alert-info">No downloads match the current filter.</div>';
+                return;
+            }
+
+            const table = `
                     <table class="table table-striped table-hover align-middle table-fixed-layout">
                         <thead>
                             <tr>
@@ -154,14 +196,14 @@
                         </thead>
                         <tbody>
                             ${filteredDownloads.map(d => {
-                                let displayType = d.request_type;
-                                if (displayType === 'movie') { displayType = 'Movie'; }
-                                else if (displayType === 'tv_show') { displayType = 'TV Show'; }
+                let displayType = d.request_type;
+                if (displayType === 'movie') { displayType = 'Movie'; }
+                else if (displayType === 'tv_show') { displayType = 'TV Show'; }
 
-                                const subtextParts = [displayType, d.quality, d.language].filter(Boolean);
-                                const subtext = subtextParts.join(' | ');
+                const subtextParts = [displayType, d.quality, d.language].filter(Boolean);
+                const subtext = subtextParts.join(' | ');
 
-                                return `
+                return `
                                     <tr>
                                         <td class="col-title">
                                             <div title="${d.title}">${d.title}</div>
@@ -184,68 +226,68 @@
                                         </td>
                                     </tr>
                                 `;
-                            }).join('')}
+            }).join('')}
                         </tbody>
                     </table>
                 `;
-                queueContainer.innerHTML = table;
-            }
+            queueContainer.innerHTML = table;
+        }
 
-            window.fetchQueue = function() {
-                fetch('{{ url_for("get_queue") }}')
-                    .then(response => response.json())
-                    .then(data => {
-                        currentDownloads = data;
-                        renderTable(data);
-                    })
-                    .catch(error => {
-                        console.error('Error fetching queue:', error);
-                        queueContainer.innerHTML = '<div class="alert alert-danger">Error loading queue.</div>';
-                    });
-            }
+        window.fetchQueue = function () {
+            fetch('{{ url_for("get_queue") }}')
+                .then(response => response.json())
+                .then(data => {
+                    currentDownloads = data;
+                    renderTable(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching queue:', error);
+                    queueContainer.innerHTML = '<div class="alert alert-danger">Error loading queue.</div>';
+                });
+        }
 
-            applyFiltersBtn.addEventListener('click', () => {
-                fetchQueue();
-                filterModal.hide();
-            });
-            
+        applyFiltersBtn.addEventListener('click', () => {
             fetchQueue();
-            setInterval(fetchQueue, 5000);
+            filterModal.hide();
         });
 
-        function deleteDownload(downloadId) {
-            if (!confirm('Are you sure you want to delete this download?')) return;
+        fetchQueue();
+        setInterval(fetchQueue, 5000);
+    });
 
-            const itemIndex = currentDownloads.findIndex(d => d.id === downloadId);
-            if (itemIndex > -1) {
-                currentDownloads.splice(itemIndex, 1);
-                renderTable(currentDownloads);
-            }
+    function deleteDownload(downloadId) {
+        if (!confirm('Are you sure you want to delete this download?')) return;
 
-            fetch(`/api/downloads/${downloadId}/delete`, { method: 'POST' }).catch(err => {
-                console.error("Delete failed:", err);
-                fetchQueue(); // Revert on failure
-            });
-        }
-
-        function changePriority(downloadId, direction) {
-            const itemIndex = currentDownloads.findIndex(d => d.id === downloadId);
-            if (itemIndex === -1) return;
-
-            const swapIndex = direction === 'up' ? itemIndex - 1 : itemIndex + 1;
-            if (swapIndex < 0 || swapIndex >= currentDownloads.length) return;
-
-            [currentDownloads[itemIndex], currentDownloads[swapIndex]] = [currentDownloads[swapIndex], currentDownloads[itemIndex]];
+        const itemIndex = currentDownloads.findIndex(d => d.id === downloadId);
+        if (itemIndex > -1) {
+            currentDownloads.splice(itemIndex, 1);
             renderTable(currentDownloads);
-
-            fetch(`/api/downloads/${downloadId}/priority`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ direction: direction })
-            }).catch(err => {
-                console.error("Priority change failed:", err);
-                fetchQueue(); // Revert on failure
-            });
         }
-    </script>
+
+        fetch(`/api/downloads/${downloadId}/delete`, { method: 'POST' }).catch(err => {
+            console.error("Delete failed:", err);
+            fetchQueue(); // Revert on failure
+        });
+    }
+
+    function changePriority(downloadId, direction) {
+        const itemIndex = currentDownloads.findIndex(d => d.id === downloadId);
+        if (itemIndex === -1) return;
+
+        const swapIndex = direction === 'up' ? itemIndex - 1 : itemIndex + 1;
+        if (swapIndex < 0 || swapIndex >= currentDownloads.length) return;
+
+        [currentDownloads[itemIndex], currentDownloads[swapIndex]] = [currentDownloads[swapIndex], currentDownloads[itemIndex]];
+        renderTable(currentDownloads);
+
+        fetch(`/api/downloads/${downloadId}/priority`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ direction: direction })
+        }).catch(err => {
+            console.error("Priority change failed:", err);
+            fetchQueue(); // Revert on failure
+        });
+    }
+</script>
 {% endblock %}

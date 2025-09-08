@@ -149,7 +149,13 @@ def get_all_downloads():
 def get_pending_downloads():
     with get_db_conn() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM downloads WHERE status = 'queued' ORDER BY priority DESC, id ASC")
+        cursor.execute("""
+            SELECT d.*, r.title
+            FROM downloads d
+            JOIN requests r ON d.request_id = r.id
+            WHERE d.status = 'queued' 
+            ORDER BY d.priority DESC, d.id ASC
+        """)
         downloads = [dict(row) for row in cursor.fetchall()]
         return downloads
 
@@ -177,6 +183,12 @@ def increment_retry_count(download_id):
         cursor = conn.cursor()
         cursor.execute("UPDATE downloads SET retries = retries + 1 WHERE id = ?", (download_id,))
         conn.commit()
+
+def is_link_already_added(fichier_link):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM downloads WHERE fichier_link = ?", (fichier_link,))
+        return cursor.fetchone() is not None
 
 if __name__ == '__main__':
     import logger_setup

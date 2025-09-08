@@ -7,11 +7,19 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import re
 import os
+import random
 import requests
 import logging
 from datetime import datetime
+from telegram_notifier import send_notification
+from file_parser import parse_filename
+from tqdm import tqdm
 
 log = logging.getLogger(__name__)
+
+class DownloadCancelledError(Exception):
+    """Custom exception to indicate that a download was cancelled."""
+    pass
 
 class FichierDownloader:
     """Manages a persistent browser session to download files from 1fichier."""
@@ -65,12 +73,14 @@ class FichierDownloader:
             self.driver.quit()
             self.driver = None
 
-    def download_file(self, url, status_callback):
+    def download_file(self, url, status_callback, cancellation_check=None):
         if not self.driver:
             raise Exception("Browser session not started. Call start_session() first.")
 
         try:
-            status_callback("processing")
+            if cancellation_check and cancellation_check():
+                raise DownloadCancelledError()
+
             self.driver.get(url)
 
             try:
@@ -87,17 +97,17 @@ class FichierDownloader:
                 return False
 
             if "vous devez attendre entre chaque téléchargement" in page_text:
-                log.warning(f"Wait condition detected. Waiting for {self.wait_time_seconds / 60} minutes...")
-                status_callback("pending")
-                time.sleep(self.wait_time_seconds)
-                # After waiting, we need to retry the whole process for this URL
-                return self.download_file(url, status_callback)
+                self._handle_wait_condition(status_callback, cancellation_check)
+                # After waiting, retry the download for the same URL
+                return self.download_file(url, status_callback, cancellation_check)
 
+            # --- Page is valid, now we can set the status to processing ---
+            status_callback("processing")
             log.info("Page seems valid, proceeding with download logic...")
-            download_url = self._get_final_download_link(status_callback)
+            download_url = self._get_final_download_link(status_callback, cancellation_check)
             
             if download_url:
-                self._download_from_link(download_url, status_callback)
+                self._download_from_link(download_url, status_callback, cancellation_check)
                 status_callback("done", progress=100)
                 return True
             else:
@@ -105,21 +115,77 @@ class FichierDownloader:
                 self._save_error_debug_info()
                 status_callback("failed")
                 return False
-
+        
+        except DownloadCancelledError:
+            log.info("Download was cancelled by the user.")
+            return False
         except Exception as e:
             log.error(f"An unexpected error occurred: {e}", exc_info=True)
             self._save_error_debug_info()
             status_callback("failed")
             return False
 
-    def _get_final_download_link(self, status_callback):
+    def _handle_wait_condition(self, status_callback, cancellation_check):
+        """Parses the wait time from the download button and waits accordingly."""
+        status_callback("pending")
+        # Set a default wait time in case parsing fails
+        wait_seconds = self.wait_time_seconds 
+
+        try:
+            # Find the button with the countdown timer, which has id='dlw'
+            timer_button = self.driver.find_element(By.ID, 'dlw')
+            button_text = timer_button.text
+            
+            # Use regex to find the number of seconds in the button's text
+            seconds_match = re.search(r'(\d+)', button_text)
+            
+            if seconds_match:
+                parsed_seconds = int(seconds_match.group(1))
+                if parsed_seconds > 0:
+                    # Add a small buffer (e.g., 5 seconds) to account for script execution delays
+                    wait_seconds = parsed_seconds + 5 
+                    log.warning(f"Wait condition detected. Waiting for {wait_seconds} seconds based on page timer.")
+                else:
+                    log.warning(f"Parsed 0 or negative seconds from timer, using default wait.")
+            else:
+                log.warning(f"Could not parse seconds from button text: '{button_text}'. Falling back to default wait.")
+
+        except Exception as e:
+            log.error(f"Could not find or parse timer element (id='dlw'), falling back to default wait. Error: {e}")
+
+        # Wait for the calculated duration, checking for cancellation every second
+        wait_start_time = time.time()
+        while time.time() - wait_start_time < wait_seconds:
+            if cancellation_check and cancellation_check():
+                raise DownloadCancelledError()
+            time.sleep(1)
+        log.info("Wait finished, proceeding to retry download.")
+
+
+    def _get_final_download_link(self, status_callback, cancellation_check=None):
         try:
             wait_button = WebDriverWait(self.driver, 5).until(EC.presence_of_element_located((By.ID, 'dlw')))
             if not wait_button.is_enabled():
                 log.info("Countdown detected. Setting status to PENDING.")
                 status_callback("pending")
-                WebDriverWait(self.driver, 120).until(EC.element_to_be_clickable((By.ID, 'dlw')))
-            
+                
+                # Wait for the button to be clickable, with cancellation checks
+                wait_interval = 1 # seconds
+                total_wait = 120 # seconds
+                for _ in range(total_wait // wait_interval):
+                    if cancellation_check and cancellation_check():
+                        raise DownloadCancelledError()
+                    try:
+                        if WebDriverWait(self.driver, wait_interval).until(EC.element_to_be_clickable((By.ID, 'dlw'))):
+                            break
+                    except TimeoutException:
+                        continue # Button not yet clickable, continue waiting
+                else: # Loop finished without break
+                    raise TimeoutException("Timed out waiting for download button to become clickable.")
+
+            if cancellation_check and cancellation_check():
+                raise DownloadCancelledError()
+
             log.info("Clicking button via JavaScript to avoid interception.")
             self.driver.execute_script("arguments[0].click();", wait_button)
         except TimeoutException:
@@ -131,7 +197,7 @@ class FichierDownloader:
         except TimeoutException:
             return None
 
-    def _download_from_link(self, link, status_callback):
+    def _download_from_link(self, link, status_callback, cancellation_check=None):
         log.info("Starting file transfer...")
         try:
             with requests.get(link, stream=True, timeout=30) as r:
@@ -151,10 +217,20 @@ class FichierDownloader:
                 last_reported_progress = -1
 
                 status_callback("downloading", progress=0)
-                with open(filepath, 'wb') as f:
+                with open(filepath, 'wb') as f, tqdm(
+                    total=total_size,
+                    unit='iB',
+                    unit_scale=True,
+                    desc=filename,
+                    ncols=100
+                ) as bar:
                     for chunk in r.iter_content(chunk_size=8192):
+                        if cancellation_check and cancellation_check():
+                            raise DownloadCancelledError()
+                        
                         f.write(chunk)
                         downloaded += len(chunk)
+                        bar.update(len(chunk))
                         progress = (downloaded / total_size) * 100 if total_size > 0 else 0
                         
                         if progress >= last_reported_progress + 0.1:
@@ -162,7 +238,31 @@ class FichierDownloader:
                             last_reported_progress = progress
             
             status_callback("done", progress=100)
-            log.info(f"File downloaded successfully to {filepath}")
+            log.info(f"File downloaded successfully to {filename}")
+
+            media_info = parse_filename(filename)
+            title = media_info.get('title', filename)
+            media_type = media_info.get('type', 'file')
+
+            if media_type == 'tv_show':
+                media_type = 'TV show'
+                title = f"{title} S{media_info.get('season', '')}E{media_info.get('episode', '')}"
+
+            messages = [
+                f"Hey! Your {media_type} '{title}' is ready. Grab some popcorn! 🍿",
+                f"Success! '{title}' has finished downloading. Hope you enjoy it! 🎬",
+                f"Good news! Your {media_type} '{title}' has arrived. Time for a movie night! ✨",
+                f"Voilà! '{title}' is downloaded and waiting for you. 🎉",
+                f"Mission accomplished. Your {media_type} '{title}' is now in your collection. 🚀",
+                f"Beep boop... Download complete! '{title}' is ready for viewing. 🤖",
+                f"The eagle has landed. I repeat, '{title}' has landed. 🦅",
+                f"It's here! '{title}' has been successfully retrieved from the digital cosmos. 🌌",
+                f"Your download of '{title}' is complete. Let the binge-watching commence! 📺",
+                f"I've got your {media_type}! '{title}' is downloaded and ready to roll. 🎞️"
+            ]
+            
+            send_notification(random.choice(messages))
+
         except requests.exceptions.RequestException as e:
             log.error(f"An error occurred during download: {e}")
             raise

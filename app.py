@@ -6,11 +6,15 @@ from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, render_template, redirect, url_for
 from flask_bootstrap import Bootstrap4
 from waitress import serve
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import database
 import logger_setup
 from file_parser import parse_filename
-from fichier_dl import FichierDownloader
+from fichier_dl import FichierDownloader, get_filename_from_url, DownloadCancelledError
+from telegram_bot import start_bot
 
 # --- App Initialization ---
 logger_setup.setup_logging()
@@ -165,37 +169,60 @@ def download_worker():
 
             download_job = pending_downloads[0]
             
+            # --- Pre-download check ---
+            # Verify that the job hasn't been deleted by the user since being queued.
+            if not database.get_download_by_id(download_job['id']):
+                log.warning(f"[Worker]: Job {download_job['id']} was deleted from the queue. Skipping.")
+                continue
+
             if download_job['status'] != 'queued':
                 continue
 
             log.info(f"[Worker]: Starting job {download_job['id']} for link: {download_job['fichier_link']}")
 
             def status_callback(status, progress=None):
-                if status != 'downloading' or progress == 0 or progress == 100:
-                    log.info(f"[Job {download_job['id']}]: Status -> {status}, Progress -> {progress}%")
-                database.update_download_status(download_job['id'], status, progress)
+                # To prevent errors if the job is deleted mid-process, check if it still exists.
+                if database.get_download_by_id(download_job['id']):
+                    # Log status changes, but not every single progress update for 'downloading'.
+                    if status not in ['downloading', 'pending'] or progress in [0, 100]:
+                        log.info(f"[Job {download_job['id']}]: Status -> {status}, Progress -> {progress if progress is not None else 'N/A'}%")
+                    database.update_download_status(download_job['id'], status, progress)
+
+            def cancellation_callback():
+                """Returns True if the download job has been deleted."""
+                return database.get_download_by_id(download_job['id']) is None
 
             try:
-                database.update_download_status(download_job['id'], 'processing')
-                success = downloader.download_file(download_job['fichier_link'], status_callback)
+                success = downloader.download_file(
+                    download_job['fichier_link'], 
+                    status_callback,
+                    cancellation_callback
+                )
                 
                 if success:
                     log.info(f"[Worker]: Finished processing job {download_job['id']}.")
                     database.update_download_status(download_job['id'], 'completed', 100)
                 else:
-                    log.warning(f"[Worker]: Job {download_job['id']} failed. Checking retry count.")
-                    database.increment_retry_count(download_job['id'])
+                    # If the job failed (but wasn't cancelled), it will still exist in the DB.
                     job_info = database.get_download_by_id(download_job['id'])
-                    if job_info['retries'] > 1:
-                        log.error(f"[Worker]: Job {download_job['id']} has exceeded max retries. Marking as failed.")
-                        database.update_download_status(download_job['id'], 'failed')
-                    else:
-                        log.info(f"[Worker]: Job {download_job['id']} will be retried. Resetting status to queued.")
-                        database.update_download_status(download_job['id'], 'queued')
+                    if job_info:
+                        log.warning(f"[Worker]: Job {download_job['id']} failed. Checking retry count.")
+                        database.increment_retry_count(download_job['id'])
+                        # Re-fetch to get the updated retry count
+                        job_info = database.get_download_by_id(download_job['id'])
+                        if job_info['retries'] > 1:
+                            log.error(f"[Worker]: Job {download_job['id']} has exceeded max retries. Marking as failed.")
+                            database.update_download_status(download_job['id'], 'failed')
+                        else:
+                            log.info(f"[Worker]: Job {download_job['id']} will be retried. Resetting status to queued.")
+                            database.update_download_status(download_job['id'], 'queued')
+                    # If job_info is None, it was cancelled, and we just loop to the next job.
 
             except Exception as e:
                 log.error(f"[Worker]: An unexpected error occurred while processing job {download_job['id']}: {e}", exc_info=True)
-                database.update_download_status(download_job['id'], 'failed')
+                # Check if job exists before updating its status to failed.
+                if database.get_download_by_id(download_job['id']):
+                    database.update_download_status(download_job['id'], 'failed')
                 continue
 
     finally:
@@ -206,6 +233,12 @@ def download_worker():
 if __name__ == '__main__':
     database.reset_stale_downloads()
 
+    # Start the Telegram bot in a background thread
+    bot_thread = threading.Thread(target=start_bot, name="TelegramBot")
+    bot_thread.daemon = True
+    bot_thread.start()
+
+    # Start the download worker in a background thread
     worker_thread = threading.Thread(target=download_worker, name="DownloadWorker")
     worker_thread.daemon = True
     worker_thread.start()
