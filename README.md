@@ -1,6 +1,7 @@
 # Harvester
 
-Harvester is a self-hosted download manager for `1fichier.com`, designed for seamless, unattended operation. It features a modern web interface, a powerful Telegram bot for link submission, and a resilient download queue that automatically handles wait times and retries.
+Harvester is a self-hosted download manager for `1fichier.com`, designed for seamless, unattended operation. It features a modern web interface, a powerful Telegram bot for link submission, and a resilient download queue that automatically handles wait times and retries.  
+It also incorporates a dynamic search function that automatically discovers the active 'zone-telechargement' domain, intelligently querying the site to retrieve the optimal file based on a user's request.
 
 ![Harvester Queue UI](./WebUI.png) 
 
