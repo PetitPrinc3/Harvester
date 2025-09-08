@@ -4,6 +4,14 @@ import os
 from dotenv import load_dotenv
 from tqdm import tqdm
 
+# --- Custom Log Levels ---
+# It's important to define these before they are used in the formatter or setup.
+logging.addLevelName(logging.INFO, "INFO")
+logging.addLevelName(logging.WARNING, "WARN")
+logging.addLevelName(logging.ERROR, "FAIL")
+logging.addLevelName(logging.CRITICAL, "CRIT")
+logging.addLevelName(logging.DEBUG, "DBUG")
+
 class TqdmLoggingHandler(logging.Handler):
     def emit(self, record):
         try:
@@ -86,3 +94,5 @@ if __name__ == '__main__':
     logging.info("Logger has been set up. This is an info message.")
     logging.warning("This is a warning message.")
     logging.error("This is an error message.")
+    logging.critical("This is a critical message.")
+    logging.debug("This is a debug message.")

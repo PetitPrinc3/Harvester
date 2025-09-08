@@ -246,9 +246,9 @@ class FichierDownloader:
 
             if media_type == 'tv_show':
                 media_type = 'TV show'
-                title = f"{title} S{media_info.get('season', '')}E{media_info.get('episode', '')}"
+                title = f"{title} S{media_info.get('season', ''):02d}E{media_info.get('episode', ''):02d}"
 
-            messages = [
+            message_templates = [
                 f"Hey! Your {media_type} '{title}' is ready. Grab some popcorn! 🍿",
                 f"Success! '{title}' has finished downloading. Hope you enjoy it! 🎬",
                 f"Good news! Your {media_type} '{title}' has arrived. Time for a movie night! ✨",
@@ -261,7 +261,8 @@ class FichierDownloader:
                 f"I've got your {media_type}! '{title}' is downloaded and ready to roll. 🎞️"
             ]
             
-            send_notification(random.choice(messages))
+            final_message = random.choice(message_templates)
+            send_notification(final_message)
 
         except requests.exceptions.RequestException as e:
             log.error(f"An error occurred during download: {e}")

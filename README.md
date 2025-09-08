@@ -9,10 +9,13 @@ It also incorporates a dynamic search function that automatically discovers the 
 
 -   **Web UI**: A clean, responsive web interface to submit links and manage the download queue.
 -   **Dynamic Download Queue**: View real-time status, progress, and metadata for all files. Interactively reorder the queue priority, delete items, and monitor activity.
--   **Telegram Bot Integration**: Add new downloads simply by sending `1fichier.com` links to your configured Telegram bot. The bot provides feedback on which links were successfully added or why they failed.
+-   **Advanced Telegram Bot**: 
+    - Add downloads by sending `1fichier.com` links.
+    - Search for movies and TV shows with the powerful `/search` command.
+    - The bot intelligently parses natural language queries for titles, seasons, and episodes.
 -   **Automated Download Handling**: Harvester uses a Selenium backend to intelligently navigate `1fichier.com`, automatically waiting for timers to expire before starting the download.
 -   **Resilient & Persistent**: The application uses an SQLite database to maintain the queue's state. It automatically resumes any in-progress downloads on restart and retries failed downloads once.
--   **Console Monitoring**: See detailed logs and a live `tqdm` progress bar for the currently active download directly in your console.
+-   **Consistent Console Logging**: See detailed, color-coded, and emoji-rich logs for all application components, including a live `tqdm` progress bar for active downloads.
 -   **Completion Notifications**: Receive a notification via Telegram as soon as a file has finished downloading.
 -   **Containerized**: The entire application is containerized with Docker for a simple, one-command setup and consistent deployment.
 
@@ -98,7 +101,14 @@ Before running the application, you need to provide your Telegram API credential
     Open your web browser and navigate to `http://localhost:5000`. From here, you can submit links and view the download queue.
 
 2.  **Use the Telegram Bot**:
-    Simply send a message containing one or more `1fichier.com` links to the Telegram group you created. The bot will process them and add them to the queue.
+    - **Adding Links**: Simply send a message containing one or more `1fichier.com` links to the Telegram group you created. The bot will process them and add them to the queue.
+    - **Searching for Media**: Use the `/search` command to find movies or specific TV show episodes. The parser is flexible and can handle various formats. For example:
+      ```
+      /search Mr Robot season 3 episode 2
+      /search Mr Robot episode 2 season 3
+      /search Mr Robot saison 3
+      /search The Matrix
+      ```
 
 3.  **View Logs**:
     If running with Docker, you can see the live logs and the download progress bar by tailing the container's logs:

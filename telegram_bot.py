@@ -24,26 +24,60 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = int(os.getenv('TELEGRAM_GROUP_CHAT_ID'))
 ZT_BASE_URL = os.getenv('ZT_BASE_URL', "https://www.zone-telechargement.diy")
 
+def parse_search_query(query_text):
+    """Parses a search query to extract title, season, and episode, regardless of order."""
+    if not query_text:
+        return None, None, None
+
+    title = query_text
+    season, episode = None, None
+
+    # Find and extract season number (e.g., "season 3", "saison 3", "s03")
+    season_match = re.search(r'(?:saison|season|s)\s*(\d{1,2})', title, re.IGNORECASE)
+    if season_match:
+        season = int(season_match.group(1))
+        title = title.replace(season_match.group(0), '')
+
+    # Find and extract episode number (e.g., "episode 2", "épisode 2", "ep2", "e02")
+    episode_match = re.search(r'(?:épisode|episode|ep|e)\s*(\d{1,2})', title, re.IGNORECASE)
+    if episode_match:
+        episode = int(episode_match.group(1))
+        title = title.replace(episode_match.group(0), '')
+
+    # Clean up the title by removing extra spaces
+    title = re.sub(r'\s+', ' ', title).strip()
+
+    # If the title is empty after extraction, the query was likely just "season 3"
+    if not title and (season is not None or episode is not None):
+        return query_text, None, None
+
+    return title, season, episode
+
 # --- New Search Command Handler ---
 @events.register(events.NewMessage(pattern=re.compile(r"/search(?:$|\s+(.*))"), chats=CHAT_ID))
 async def search_command_handler(event):
-    """Handles the /search command with a conversation."""
+    """Handles the /search command, parsing complex queries and using conversations for missing info."""
     loop = asyncio.get_running_loop()
     chat = await event.get_chat()
     sender = await event.get_sender()
     sender_name = sender.username if sender.username else sender.first_name
     
-    # Extract title from the command if provided
-    initial_title = event.pattern_match.group(1)
+    raw_query = event.pattern_match.group(1)
+    
+    # --- Parse Initial Query ---
+    requested_title, requested_season, requested_episode = parse_search_query(raw_query)
+    media_type_choice = 'tv_show' if requested_season is not None else None
 
-    log.info(f"[Bot]: New search initiated by '{sender_name}'. Initial title: '{initial_title or 'None'}'")
+    log.info(
+        f"[Bot]: New search by '{sender_name}'. "
+        f"Query: '{raw_query or 'None'}'. "
+        f"Parsed: [T='{requested_title}', S={requested_season}, E={requested_episode}]"
+    )
 
     try:
-        async with event.client.conversation(chat, timeout=120) as conv:
-            # --- Get Title (if not provided in command) ---
-            if initial_title:
-                requested_title = initial_title
-            else:
+        async with event.client.conversation(chat, timeout=180) as conv:
+            # --- Get Title (if not provided) ---
+            if not requested_title:
                 await conv.send_message("What title are you looking for?")
                 title_response = await conv.get_response()
                 if title_response.text == '/cancel':
@@ -51,34 +85,52 @@ async def search_command_handler(event):
                     return
                 requested_title = title_response.text
 
-            # --- Get Media Type ---
-            type_message = await conv.send_message(
-                f"Searching for **{requested_title}**. Is it a Movie or a TV Show?",
-                buttons=[
-                    [Button.inline("Movie", b'movie'), Button.inline("TV Show", b'tv_show')],
-                    [Button.inline("Cancel", b'cancel')]
-                ]
-            )
-            press = await conv.wait_event(events.CallbackQuery)
-            media_type_choice = press.data.decode('utf-8')
-            await type_message.delete() # Clean up the button message
+            # --- Get Media Type (if not deduced) ---
+            if not media_type_choice:
+                type_message = await conv.send_message(
+                    f"Searching for **{requested_title}**. Is it a Movie or a TV Show?",
+                    buttons=[
+                        [Button.inline("Movie", b'movie'), Button.inline("TV Show", b'tv_show')],
+                        [Button.inline("Cancel", b'cancel')]
+                    ]
+                )
+                press = await conv.wait_event(events.CallbackQuery)
+                media_type_choice = press.data.decode('utf-8')
+                await type_message.delete()
 
-            if media_type_choice == 'cancel':
-                await conv.send_message("Search cancelled.")
-                return
-
-            # --- Get Season (for TV Shows) ---
-            requested_season = None
-            if media_type_choice == 'tv_show':
-                await conv.send_message(f"Which season of **{requested_title}**?")
-                season_response = await conv.get_response()
-                if season_response.text == '/cancel':
+                if media_type_choice == 'cancel':
                     await conv.send_message("Search cancelled.")
                     return
-                if not season_response.text.isdigit():
-                    await conv.send_message("Invalid season number. Search cancelled.")
-                    return
-                requested_season = int(season_response.text)
+
+            # --- Get Season/Episode (for TV Shows, if not provided) ---
+            if media_type_choice == 'tv_show':
+                if requested_season is None:
+                    await conv.send_message(f"Which season of **{requested_title}**?")
+                    season_response = await conv.get_response()
+                    if season_response.text == '/cancel':
+                        await conv.send_message("Search cancelled.")
+                        return
+                    if not season_response.text.isdigit():
+                        await conv.send_message("Invalid season number. Search cancelled.")
+                        return
+                    requested_season = int(season_response.text)
+                
+                if requested_episode is None:
+                    episode_message = await conv.send_message(
+                        f"Looking for a specific episode of Season {requested_season}?",
+                        buttons=[Button.inline("Yes, let me specify", b'yes'), Button.inline("No, show all", b'no')]
+                    )
+                    press = await conv.wait_event(events.CallbackQuery)
+                    choice = press.data.decode('utf-8')
+                    await episode_message.delete()
+                    
+                    if choice == 'yes':
+                        await conv.send_message("Which episode number?")
+                        episode_response = await conv.get_response()
+                        if episode_response.text.isdigit():
+                            requested_episode = int(episode_response.text)
+                        else:
+                            await conv.send_message("Invalid episode number. Showing all for the season.")
 
             # --- Perform Search ---
             status_msg = await event.respond("🔎 Searching, please wait...")
@@ -92,8 +144,7 @@ async def search_command_handler(event):
                 best_result = await loop.run_in_executor(None, select_best_movie, parser, results, search_term)
             else: # tv_show
                 search_type = 'series'
-                search_term = f"{requested_title} saison {requested_season}"
-                log.info(f"Searching for show '{search_term}'...")
+                log.info(f"Searching for show '{requested_title}' Season {requested_season}...")
                 results = await loop.run_in_executor(None, parser.search, requested_title, search_type)
                 best_result = await loop.run_in_executor(None, select_best_show, parser, results, requested_title, requested_season)
 
@@ -114,6 +165,13 @@ async def search_command_handler(event):
                 )
                 await event.respond(reply)
             else: # tv_show
+                if requested_episode is not None:
+                    episode_found = next((ep for ep in best_result['episode_data'] if ep['episode_number'] == requested_episode), None)
+                    if episode_found:
+                        best_result['episode_data'] = [episode_found]
+                    else:
+                        await event.respond(f"😕 Could not find Episode {requested_episode} for this season, but found the season pack.")
+                
                 episodes_text = "\n".join(f"- Episode {ep['episode_number']}: `{ep['dl_protect_link']}`" for ep in best_result['episode_data'])
                 reply = (
                     f"📺 **{best_result['title']} - Season {best_result['season']}**\n\n"
@@ -122,9 +180,7 @@ async def search_command_handler(event):
                     f"- **Score:** {best_result['rating_score']}\n\n"
                     f"**Episodes:**\n{episodes_text}"
                 )
-                # Split message if too long for Telegram
                 if len(reply) > 4096:
-                    # Simplified splitting logic
                     header = (
                         f"📺 **{best_result['title']} - Season {best_result['season']}**\n\n"
                         f"- **Quality:** {best_result['quality']}\n"
@@ -244,6 +300,10 @@ def construct_reply_message(success_titles, failure_links):
 
 async def handle_new_message(event):
     """Listens for new messages, processes unique 1fichier links, and sends a single summary reply."""
+    # --- Prevent Bot from processing its own messages ---
+    if event.message.out:
+        return
+        
     # Ignore commands
     if event.raw_text.startswith('/'):
         return
