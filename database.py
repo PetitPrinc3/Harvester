@@ -145,6 +145,20 @@ def get_all_downloads():
         downloads = [dict(row) for row in cursor.fetchall()]
         return downloads
 
+def get_active_queue():
+    """Gets all downloads that are not completed."""
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT d.id, d.status, d.download_progress, r.title, r.season, d.episode_number
+            FROM downloads d
+            JOIN requests r ON d.request_id = r.id
+            WHERE d.status != 'completed'
+            ORDER BY d.priority DESC, r.timestamp ASC, d.id ASC
+        """)
+        queue = [dict(row) for row in cursor.fetchall()]
+        return queue
+
 
 def get_pending_downloads():
     with get_db_conn() as conn:

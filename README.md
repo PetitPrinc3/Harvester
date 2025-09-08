@@ -1,5 +1,7 @@
 # Harvester
 
+![Google Gemini - CLI](https://img.shields.io/badge/Google%20Gemini-CLI-4A8AF4?style=for-the-badge&logo=google-gemini&logoColor=white)
+
 Harvester is a self-hosted download manager for `1fichier.com`, designed for seamless, unattended operation. It features a modern web interface, a powerful Telegram bot for link submission, and a resilient download queue that automatically handles wait times and retries.
 
 ![Harvester Queue UI](https://i.imgur.com/example.png) *(Image placeholder: A screenshot of the web UI's queue page would be ideal here)*
@@ -17,12 +19,7 @@ Harvester is a self-hosted download manager for `1fichier.com`, designed for sea
 
 ## Setup & Installation
 
-### Prerequisites
-
--   [Docker](https://www.docker.com/get-started) installed on your system.
--   A Telegram account to create a bot and get API credentials.
-
-### 1. Configuration
+### 1. Configuration (`.env` file)
 
 Before running the application, you need to provide your Telegram API credentials.
 
@@ -37,7 +34,7 @@ Before running the application, you need to provide your Telegram API credential
     -   Forward that message to the [@userinfobot](https://t.me/userinfobot) to get the group's **Chat ID** (it will be a negative number, like `-100123456789`).
 
 3.  **Create the `.env` file**:
-    In the root of the project directory, create a file named `.env` and add your credentials to it.
+    In the root of the project directory, create a file named `.env` and add your credentials to it. **This file is ignored by git, so your secrets are safe.**
 
     ```env
     # Telegram API Credentials
@@ -50,9 +47,7 @@ Before running the application, you need to provide your Telegram API credential
     LOG_FILENAME=harvester.log
     ```
 
-### 2. Running with Docker
-
-This is the recommended method for running Harvester.
+### 2. Running with Docker (Recommended)
 
 1.  **Build the Docker Image**:
     ```sh
@@ -66,7 +61,7 @@ This is the recommended method for running Harvester.
     docker run -d \
       -p 5000:5000 \
       -v ./downloads:/app/downloads \
-      -v ./harvester.db:/app/harvester.db \
+      -v ./database.db:/app/database.db \
       --env-file .env \
       --name harvester-app \
       --restart=unless-stopped \
@@ -75,10 +70,28 @@ This is the recommended method for running Harvester.
     -   `-d`: Run the container in detached mode.
     -   `-p 5000:5000`: Maps the container's port 5000 to your host's port 5000.
     -   `-v ./downloads:/app/downloads`: Mounts a local `downloads` folder to store completed files.
-    -   `-v ./harvester.db:/app/harvester.db`: Mounts the SQLite database file locally for persistence.
+    -   `-v ./database.db:/app/database.db`: Mounts the SQLite database file locally for persistence.
     -   `--env-file .env`: Loads the environment variables from your `.env` file.
     -   `--name harvester-app`: Assigns a convenient name to the container.
     -   `--restart=unless-stopped`: Ensures the container automatically restarts on boot or if it crashes.
+
+### 3. Running Locally (Without Docker)
+
+1.  **Create a Virtual Environment**:
+    ```sh
+    python -m venv venv
+    source venv/bin/activate  # On Windows, use `venv\Scripts\activate`
+    ```
+
+2.  **Install Dependencies**:
+    ```sh
+    pip install -r requirements.txt
+    ```
+
+3.  **Run the Application**:
+    ```sh
+    python app.py
+    ```
 
 ## Usage
 
@@ -89,10 +102,11 @@ This is the recommended method for running Harvester.
     Simply send a message containing one or more `1fichier.com` links to the Telegram group you created. The bot will process them and add them to the queue.
 
 3.  **View Logs**:
-    To see the live logs and the download progress bar, you can tail the container's logs:
+    If running with Docker, you can see the live logs and the download progress bar by tailing the container's logs:
     ```sh
     docker logs -f harvester-app
     ```
+    If running locally, the logs will appear directly in your console.
 
 ---
 

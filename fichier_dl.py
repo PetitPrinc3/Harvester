@@ -224,7 +224,7 @@ class FichierDownloader:
                     desc=filename,
                     ncols=100
                 ) as bar:
-                    for chunk in r.iter_content(chunk_size=8192):
+                    for chunk in r.iter_content(chunk_size=1048576):
                         if cancellation_check and cancellation_check():
                             raise DownloadCancelledError()
                         

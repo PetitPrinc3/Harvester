@@ -23,5 +23,8 @@ COPY . .
 # Make port 5000 available to the world outside this container
 EXPOSE 5000
 
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
 # Run app.py when the container launches
 CMD ["python", "app.py"]
