@@ -6,10 +6,10 @@
     <h2>Submit 1fichier Links</h2>
     <p>Paste one or more links below, one per line.</p>
     <form method="POST" action="{{ url_for('submit_links') }}">
+        {{ form.hidden_tag() }}
         <div class="mb-3">
-            <textarea class="form-control" name="links" rows="10" placeholder="https://1fichier.com/?xxxxxxxxxx
-https://1fichier.com/?yyyyyyyyyy"></textarea>
+            {{ form.links(class="form-control", rows="10", placeholder="https://1fichier.com/?xxxxxxxxxx\nhttps://1fichier.com/?yyyyyyyyyy") }}
         </div>
-        <button type="submit" class="btn btn-primary">Submit</button>
+        {{ form.submit(class="btn btn-primary") }}
     </form>
 {% endblock %}

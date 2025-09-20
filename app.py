@@ -2,11 +2,17 @@ import logging
 import time
 import threading
 import requests
+import os
 from bs4 import BeautifulSoup
-from flask import Flask, request, jsonify, render_template, redirect, url_for
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 from flask_bootstrap import Bootstrap4
+from flask_wtf import FlaskForm, CSRFProtect
+from flask_talisman import Talisman
+from wtforms import StringField, SubmitField, TextAreaField, PasswordField
+from wtforms.validators import DataRequired
 from waitress import serve
 from dotenv import load_dotenv
+from flask_login import login_user, logout_user, login_required, current_user
 
 load_dotenv()
 
@@ -15,6 +21,7 @@ import logger_setup
 from file_parser import parse_filename
 from fichier_dl import FichierDownloader, get_filename_from_url, DownloadCancelledError
 from telegram_bot import start_bot
+from auth import login_manager, User, authenticate_user
 
 # --- App Initialization ---
 logger_setup.setup_logging()
@@ -47,75 +54,138 @@ logging.getLogger("werkzeug").addFilter(ApiQueueLogFilter())
 
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.urandom(24)
 Bootstrap4(app)
+CSRFProtect(app)
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+csp = {
+    'default-src': '\'self\'',
+    'script-src': [
+        '\'self\'',
+        'cdn.jsdelivr.net',
+        '\'unsafe-inline\''
+    ],
+    'style-src': [
+        '\'self\'',
+        'cdn.jsdelivr.net',
+        '\'unsafe-inline\''
+    ],
+    'connect-src': [
+        '\'self\'',
+        'cdn.jsdelivr.net'
+    ]
+}
+Talisman(app, content_security_policy=csp, force_https=False)
 
 database.init_db()
 
+# --- Forms ---
+
+class LinkSubmissionForm(FlaskForm):
+    links = TextAreaField('Links', validators=[DataRequired()])
+    submit = SubmitField('Submit')
+
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
+
 # --- Web Pages ---
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        password = form.password.data
+        if authenticate_user(username, password):
+            user = User(username)
+            login_user(user)
+            return redirect(url_for('index'))
+        flash('Invalid username or password')
+    return render_template('login.html', form=form)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
 @app.route('/')
+@login_required
 def index():
-    return render_template('index.html')
+    form = LinkSubmissionForm()
+    return render_template('index.html', form=form)
 
 @app.route('/queue')
+@login_required
 def queue():
     return render_template('queue.html')
 
 # --- API Endpoints ---
 
 @app.route('/submit', methods=['POST'])
+@login_required
 def submit_links():
-    links = request.form.get('links', '').strip().splitlines()
-    if not links:
-        return redirect(url_for('index'))
+    form = LinkSubmissionForm()
+    if form.validate_on_submit():
+        links = form.links.data.strip().splitlines()
+        if not links:
+            return redirect(url_for('index'))
 
-    for link in links:
-        if '1fichier.com' not in link:
-            continue
-        
-        filename = get_filename_from_url(link)
+        for link in links:
+            if '1fichier.com' not in link:
+                continue
+            
+            filename = get_filename_from_url(link)
 
-        if not filename:
-            log.error(f"Could not determine filename for link using Selenium: {link}")
-            continue
+            if not filename:
+                log.error(f"Could not determine filename for link using Selenium: {link}")
+                continue
 
-        media_info = parse_filename(filename)
+            media_info = parse_filename(filename)
 
-        request_id = database.add_request(
-            media_info.get('title', 'Unknown Title'), 
-            media_info.get('type', 'unknown'), 
-            media_info.get('season')
-        )
-        
-        with database.get_db_conn() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO downloads (request_id, episode_number, quality, language, fichier_link, status) VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    request_id, 
-                    media_info.get('episode'), 
-                    media_info.get('quality'), 
-                    media_info.get('language'), 
-                    link, 
-                    'queued'
-                )
+            request_id = database.add_request(
+                media_info.get('title', 'Unknown Title'), 
+                media_info.get('type', 'unknown'), 
+                media_info.get('season')
             )
-            conn.commit()
+            
+            with database.get_db_conn() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO downloads (request_id, episode_number, quality, language, fichier_link, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        request_id, 
+                        media_info.get('episode'), 
+                        media_info.get('quality'), 
+                        media_info.get('language'), 
+                        link, 
+                        'queued',
+                        time.time()
+                    )
+                )
+                conn.commit()
 
     return redirect(url_for('queue'))
 
 @app.route('/api/queue', methods=['GET'])
+@login_required
 def get_queue():
     downloads = database.get_all_downloads()
     return jsonify(downloads)
 
 @app.route('/api/downloads/<int:download_id>/delete', methods=['POST'])
+@login_required
 def delete_download_api(download_id):
     database.delete_download(download_id)
     log.info(f"Deleted download {download_id} via API.")
     return jsonify({"message": "Download deleted"})
 
 @app.route('/api/downloads/<int:download_id>/priority', methods=['POST'])
+@login_required
 def change_priority_api(download_id):
     data = request.get_json()
     direction = data.get('direction')
@@ -130,25 +200,22 @@ def change_priority_api(download_id):
     except StopIteration:
         return jsonify({"error": "Download not found"}), 404
 
-    item_to_move = all_downloads[current_index]
-
     if direction == 'up':
         if current_index == 0:
             return jsonify({"message": "Already at top"})
         
-        neighbor = all_downloads[current_index - 1]
+        swap_with_index = current_index - 1
         
-        database.update_download_priority(neighbor['id'], item_to_move['priority'])
-        database.update_download_priority(item_to_move['id'], neighbor['priority'])
-
     elif direction == 'down':
         if current_index == len(all_downloads) - 1:
             return jsonify({"message": "Already at bottom"})
             
-        neighbor = all_downloads[current_index + 1]
+        swap_with_index = current_index + 1
 
-        database.update_download_priority(neighbor['id'], item_to_move['priority'])
-        database.update_download_priority(item_to_move['id'], neighbor['priority'])
+    all_downloads.insert(swap_with_index, all_downloads.pop(current_index))
+    
+    download_ids = [d['id'] for d in all_downloads]
+    database.update_priorities(download_ids)
 
     return jsonify({"message": "Priority updated"})
 

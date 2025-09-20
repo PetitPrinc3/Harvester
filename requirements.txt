@@ -1,3 +1,8 @@
+Flask-WTF
+Flask-Talisman
+Werkzeug
+flask-login
+ldap3
 selenium
 telethon
 python-dotenv

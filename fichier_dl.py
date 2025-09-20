@@ -14,13 +14,13 @@ from datetime import datetime
 from telegram_notifier import send_notification
 from file_parser import parse_filename
 from tqdm import tqdm
+from werkzeug.utils import secure_filename
 
 log = logging.getLogger(__name__)
 
 class DownloadCancelledError(Exception):
     """Custom exception to indicate that a download was cancelled."""
     pass
-
 class FichierDownloader:
     """Manages a persistent browser session to download files from 1fichier."""
 
@@ -207,9 +207,9 @@ class FichierDownloader:
                     cd = r.headers['content-disposition']
                     fname_match = re.search('filename="(.+)"', cd)
                     if fname_match:
-                        filename = fname_match.group(1)
+                        filename = secure_filename(fname_match.group(1))
                 else:
-                    filename = link.split('/')[-1]
+                    filename = secure_filename(link.split('/')[-1])
 
                 filepath = os.path.join(self.download_dir, filename)
                 total_size = int(r.headers.get('content-length', 0))

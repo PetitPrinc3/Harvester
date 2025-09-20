@@ -1,5 +1,6 @@
 import sqlite3
 import logging
+import time
 
 log = logging.getLogger(__name__)
 DB_PATH = 'harvester.db'
@@ -35,7 +36,7 @@ def init_db():
                 status TEXT NOT NULL,
                 download_progress REAL DEFAULT 0,
                 retries INTEGER DEFAULT 0,
-                priority INTEGER DEFAULT 0,
+                priority REAL DEFAULT 0,
                 FOREIGN KEY (request_id) REFERENCES requests (id)
             )
         ''')
@@ -61,16 +62,17 @@ def update_request_status(request_id, status):
 def add_download_links(request_id, media_data):
     with get_db_conn() as conn:
         cursor = conn.cursor()
+        current_time = time.time()
         if media_data.get('episode_data'):
             for episode in media_data['episode_data']:
                 cursor.execute(
-                    "INSERT INTO downloads (request_id, episode_number, quality, language, dl_protect_link, status) VALUES (?, ?, ?, ?, ?, ?)",
-                    (request_id, episode['episode_number'], media_data['quality'], media_data['language'], episode['dl_protect_link'], 'pending_captcha')
+                    "INSERT INTO downloads (request_id, episode_number, quality, language, dl_protect_link, status, priority) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (request_id, episode['episode_number'], media_data['quality'], media_data['language'], episode['dl_protect_link'], 'pending_captcha', current_time)
                 )
         else:
             cursor.execute(
-                "INSERT INTO downloads (request_id, quality, language, dl_protect_link, status) VALUES (?, ?, ?, ?, ?)",
-                (request_id, media_data['quality'], media_data['language'], media_data['dl_protect_link'], 'pending_captcha')
+                "INSERT INTO downloads (request_id, quality, language, dl_protect_link, status, priority) VALUES (?, ?, ?, ?, ?, ?)",
+                (request_id, media_data['quality'], media_data['language'], media_data['dl_protect_link'], 'pending_captcha', current_time)
             )
         conn.commit()
 
@@ -140,7 +142,7 @@ def get_all_downloads():
             SELECT d.*, r.title, r.type as request_type, r.season
             FROM downloads d
             JOIN requests r ON d.request_id = r.id
-            ORDER BY d.priority DESC, d.id ASC
+            ORDER BY d.priority ASC, d.id ASC
         """)
         downloads = [dict(row) for row in cursor.fetchall()]
         return downloads
@@ -154,7 +156,7 @@ def get_active_queue():
             FROM downloads d
             JOIN requests r ON d.request_id = r.id
             WHERE d.status != 'completed'
-            ORDER BY d.priority DESC, r.timestamp ASC, d.id ASC
+            ORDER BY d.priority ASC, r.timestamp ASC, d.id ASC
         """)
         queue = [dict(row) for row in cursor.fetchall()]
         return queue
@@ -168,7 +170,7 @@ def get_pending_downloads():
             FROM downloads d
             JOIN requests r ON d.request_id = r.id
             WHERE d.status = 'queued' 
-            ORDER BY d.priority DESC, d.id ASC
+            ORDER BY d.priority ASC, d.id ASC
         """)
         downloads = [dict(row) for row in cursor.fetchall()]
         return downloads
@@ -184,6 +186,13 @@ def update_download_priority(download_id, priority):
     with get_db_conn() as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE downloads SET priority = ? WHERE id = ?", (priority, download_id))
+        conn.commit()
+
+def update_priorities(download_ids):
+    with get_db_conn() as conn:
+        cursor = conn.cursor()
+        for i, download_id in enumerate(download_ids):
+            cursor.execute("UPDATE downloads SET priority = ? WHERE id = ?", (i, download_id))
         conn.commit()
 
 def delete_download(download_id):

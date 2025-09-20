@@ -18,6 +18,7 @@ It also incorporates a dynamic search function that automatically discovers the 
 -   **Consistent Console Logging**: See detailed, color-coded, and emoji-rich logs for all application components, including a live `tqdm` progress bar for active downloads.
 -   **Completion Notifications**: Receive a notification via Telegram as soon as a file has finished downloading.
 -   **Containerized**: The entire application is containerized with Docker for a simple, one-command setup and consistent deployment.
+-   **Secure Authentication**: The web UI is protected by a secure login system that authenticates against an LDAPS server.
 -   **Intelligent Search**: Utilizes advanced fuzzy matching (`fuzz.WRatio`) and title parsing (`guessit`) to deliver highly accurate search results, distinguishing between similar titles and ignoring extraneous metadata.
 -   **Dynamic URL Fetching**: Automatically finds the latest `zone-telechargement` domain by parsing the official Telegram channel, ensuring the search functionality is always online.
 -   **Enhanced Telegram Messages**: Search results are delivered with clickable titles that link to the source page and clean, emoji-rich download links for a better user experience.
@@ -26,7 +27,7 @@ It also incorporates a dynamic search function that automatically discovers the 
 
 ### 1. Configuration (`.env` file)
 
-Before running the application, you need to provide your Telegram API credentials.
+Before running the application, you need to provide your Telegram and LDAP credentials.
 
 1.  **Create a Telegram Bot**:
     -   Talk to the [@BotFather](https://t.me/BotFather) on Telegram.
@@ -47,6 +48,12 @@ Before running the application, you need to provide your Telegram API credential
     TELEGRAM_API_HASH=your_api_hash_here
     TELEGRAM_BOT_TOKEN=your_bot_token_here
     TELEGRAM_GROUP_CHAT_ID=-100123456789
+
+    # LDAP Configuration
+    LDAP_SERVER=ldaps://your-ldap-server.com
+    LDAP_PORT=636
+    LDAP_BASE_DN=ou=users,dc=example,dc=com
+    LDAP_USER_DN=uid={username},ou=users,dc=example,dc=com
 
     # Optional: Specify a filename for the log file
     LOG_FILENAME=harvester.log
@@ -101,7 +108,7 @@ Before running the application, you need to provide your Telegram API credential
 ## Usage
 
 1.  **Access the Web UI**:
-    Open your web browser and navigate to `http://localhost:5000`. From here, you can submit links and view the download queue.
+    Open your web browser and navigate to `http://localhost:5000`. You will be prompted to log in with your LDAP credentials. From here, you can submit links and view the download queue.
 
 2.  **Use the Telegram Bot**:
     - **Adding Links**: Simply send a message containing one or more `1fichier.com` links to the Telegram group you created. The bot will process them and add them to the queue.

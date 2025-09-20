@@ -17,7 +17,7 @@ MAX_TITLE_SCORE = 100
 MAX_LANG_SCORE = 25
 MAX_MOVIE_QUALITY_SCORE = 4
 MAX_SHOW_QUALITY_SCORE = 5
-MAX_COMPLETENESS_SCORE = 30
+MAX_COMPLETENESS_SCORE = 15
 
 MAX_MOVIE_SCORE = MAX_TITLE_SCORE + MAX_LANG_SCORE + MAX_MOVIE_QUALITY_SCORE
 MAX_SHOW_RELEASE_SCORE = MAX_TITLE_SCORE + MAX_LANG_SCORE + MAX_SHOW_QUALITY_SCORE
@@ -153,7 +153,6 @@ def select_best_movie(parser, results, requested_title):
     for r in results:
         title_score = fuzz.WRatio(requested_title, r['title'])
         if title_score < SIMILARITY_THRESHOLD:
-            print(title_score, requested_title, r['title'])
             continue
         
         guess = guessit(r['title'])
@@ -221,70 +220,78 @@ def select_best_show(parser, results, requested_title, requested_season):
     if not results:
         return None
 
-    SIMILARITY_THRESHOLD = 70
+    SIMILARITY_THRESHOLD = 80
     quality_preferences = ['VOSTFR HD', 'VOSTFR', 'VO HD', 'VO', 'VF HD', 'VF']
 
+    # --- First Pass: Lightweight Filtering ---
     initial_candidates = []
     for r in results:
-        title_similarity = fuzz.WRatio(requested_title.lower(), ' - '.join((r['title'].lower().split(' - ')[:-1])))
+        guess = guessit(r['title'])
+        result_title = guess.get('title', r['title'])
+        
+        title_similarity = fuzz.WRatio(requested_title.lower(), result_title.lower())
+        
         if title_similarity < SIMILARITY_THRESHOLD:
             continue
+            
         season_match = re.search(r'saison\s*(\d+)', r['title'], re.IGNORECASE)
         if season_match and int(season_match.group(1)) == requested_season:
             r['found_season'] = int(season_match.group(1))
-            initial_candidates.append(r)
+            initial_candidates.append({'result': r, 'score': title_similarity})
 
     if not initial_candidates:
         return None
+    initial_candidates.sort(key=lambda x: x['score'], reverse=True)
+    top_candidates = [c['result'] for c in initial_candidates[:4]]
 
-    top_candidates = initial_candidates[:4]
+    # --- Second Pass: Heavyweight Scoring ---
     log.info(f"Found {len(top_candidates)} potential candidates. Analyzing...")
-
     scored_candidates = []
     for candidate in top_candidates:
         log.info(f"  Checking candidate: {candidate['title']} ({candidate['quality']})")
-        title_score = fuzz.WRatio(requested_title.lower(), candidate['title'].lower())
         
         guess = guessit(candidate['title'])
+        result_title = guess.get('title', candidate['title'])
+        title_score = fuzz.WRatio(requested_title.lower(), result_title.lower())
+        
+        season_score = 100 # All candidates in this stage have a matching season
+
         lang_score = 0
         if 'language' in guess:
-            if 'vostfr' in guess['language']:
+            if 'vostfr' in guess.get('language', []):
                 lang_score = 25
-            elif 'vf' in guess['language']:
+            elif 'vf' in guess.get('language', []):
                 lang_score = 10
         elif 'VOSTFR' in candidate['title']:
             lang_score = 25
         elif 'VF' in candidate['title']:
             lang_score = 10
-        else:
-            lang_score = 0
-
+        
+        quality_score = 0
         try:
             quality_score = len(quality_preferences) - quality_preferences.index(candidate['quality'])
         except ValueError:
-            quality_score = 0
+            pass
 
         episode_data = parser.get_show_episode_links(candidate['url'])
         completeness_score = 0
         if episode_data and episode_data['links']:
-            completeness_score = 10
+            completeness_score = 5
             episode_numbers = sorted(episode_data['links'].keys())
             episode_numbers = [e for e in episode_numbers if e != 0]
             is_consecutive = (episode_numbers == list(range(1, len(episode_numbers) + 1)))
             if is_consecutive:
-                completeness_score = 20
+                completeness_score = 10
             if is_consecutive and episode_data['is_final']:
-                completeness_score = 30
+                completeness_score = 15
         
-        if completeness_score == 0:
-            log.warning("    -> FAILED: No 1fichier links found.")
-            continue
-
-        release_score = title_score + lang_score + quality_score
-        total_score = release_score + completeness_score
-        log.info(f"    -> Score: {total_score}")
+        # Weighted score
+        total_score = (title_score * 0.5) + (season_score * 0.25) + (lang_score * 0.1) + (quality_score * 0.1) + (completeness_score * 0.05)
+        
+        log.info(f"  * Candidate: {candidate['title']} | Score: {total_score:.2f} (T: {title_score}, S: {season_score}, L: {lang_score}, Q: {quality_score}, C: {completeness_score})")
+        
         candidate['episode_data'] = episode_data
-        scored_candidates.append({'result': candidate, 'score': total_score, 'release_score': release_score, 'completeness_score': completeness_score})
+        scored_candidates.append({'result': candidate, 'score': total_score})
 
     if not scored_candidates:
         return None
@@ -297,15 +304,13 @@ def select_best_show(parser, results, requested_title, requested_season):
         for num, link in sorted(best_candidate['result']['episode_data']['links'].items())
     ]
     
-    release_percentage = round((best_candidate['release_score'] / MAX_SHOW_RELEASE_SCORE) * 100, 0)
-
     return {
         "title": requested_title,
-        "season": best_candidate['result']['found_season'],
+        "season": requested_season,
         "url": best_candidate['result']['url'],
         "quality": best_candidate['result']['quality'],
         "language": best_candidate['result']['language'],
-        "rating_score": f"{release_percentage}%",
+        "rating_score": f"{best_candidate['score']:.0f}%",
         "episode_data": episode_list
     }
 
