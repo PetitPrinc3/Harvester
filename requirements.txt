@@ -9,3 +9,4 @@ tqdm
 Flask
 bootstrap-flask
 waitress
+guessit

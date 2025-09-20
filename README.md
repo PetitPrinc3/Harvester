@@ -18,6 +18,9 @@ It also incorporates a dynamic search function that automatically discovers the 
 -   **Consistent Console Logging**: See detailed, color-coded, and emoji-rich logs for all application components, including a live `tqdm` progress bar for active downloads.
 -   **Completion Notifications**: Receive a notification via Telegram as soon as a file has finished downloading.
 -   **Containerized**: The entire application is containerized with Docker for a simple, one-command setup and consistent deployment.
+-   **Intelligent Search**: Utilizes advanced fuzzy matching (`fuzz.WRatio`) and title parsing (`guessit`) to deliver highly accurate search results, distinguishing between similar titles and ignoring extraneous metadata.
+-   **Dynamic URL Fetching**: Automatically finds the latest `zone-telechargement` domain by parsing the official Telegram channel, ensuring the search functionality is always online.
+-   **Enhanced Telegram Messages**: Search results are delivered with clickable titles that link to the source page and clean, emoji-rich download links for a better user experience.
 
 ## Setup & Installation
 

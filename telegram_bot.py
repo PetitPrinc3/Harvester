@@ -12,6 +12,7 @@ import database
 from file_parser import parse_filename
 from fichier_dl import get_filename_from_url
 from zt_parser import ZTParser, select_best_movie, select_best_show
+from telegram_parser import TelegramParser
 
 # --- Initialization ---
 load_dotenv()
@@ -33,15 +34,15 @@ def parse_search_query(query_text):
     season, episode = None, None
 
     # Find and extract season number (e.g., "season 3", "saison 3", "s03")
-    season_match = re.search(r'(?:saison|season|s)\s*(\d{1,2})', title, re.IGNORECASE)
+    season_match = re.search(r'\b(saison|season|s)\s*(\d{1,2})\b', title, re.IGNORECASE)
     if season_match:
-        season = int(season_match.group(1))
+        season = int(season_match.group(2))
         title = title.replace(season_match.group(0), '')
 
     # Find and extract episode number (e.g., "episode 2", "épisode 2", "ep2", "e02")
-    episode_match = re.search(r'(?:épisode|episode|ep|e)\s*(\d{1,2})', title, re.IGNORECASE)
+    episode_match = re.search(r'\b(épisode|episode|ep|e)\s*(\d{1,2})\b', title, re.IGNORECASE)
     if episode_match:
-        episode = int(episode_match.group(1))
+        episode = int(episode_match.group(2))
         title = title.replace(episode_match.group(0), '')
 
     # Clean up the title by removing extra spaces
@@ -134,7 +135,19 @@ async def search_command_handler(event):
 
             # --- Perform Search ---
             status_msg = await event.respond("🔎 Searching, please wait...")
-            parser = ZTParser(base_url=ZT_BASE_URL)
+            
+            # --- Update ZT URL ---
+            telegram_parser = TelegramParser()
+            latest_zt_url = await loop.run_in_executor(None, telegram_parser.find_latest_zt_link)
+            
+            if latest_zt_url:
+                zt_url = latest_zt_url
+                log.info(f"Using latest ZT URL: {zt_url}")
+            else:
+                zt_url = ZT_BASE_URL
+                log.warning(f"Could not find latest ZT URL. Falling back to default: {zt_url}")
+
+            parser = ZTParser(base_url=zt_url)
             
             if media_type_choice == 'movie':
                 search_type = 'films'
@@ -157,13 +170,13 @@ async def search_command_handler(event):
 
             if media_type_choice == 'movie':
                 reply = (
-                    f"🎬 **{best_result['title']}**\n\n"
+                    f"🎬 **[{best_result['title']}]({best_result['url']})**\n\n"
                     f"- **Quality:** {best_result['quality']}\n"
                     f"- **Language:** {best_result['language']}\n"
                     f"- **Score:** {best_result['rating_score']}\n\n"
-                    f"🔗 **Link:** `{best_result['dl_protect_link']}`"
+                    f"[🔗 Download Link]({best_result['dl_protect_link']})"
                 )
-                await event.respond(reply)
+                await event.respond(reply, parse_mode='Markdown')
             else: # tv_show
                 if requested_episode is not None:
                     episode_found = next((ep for ep in best_result['episode_data'] if ep['episode_number'] == requested_episode), None)
@@ -172,9 +185,9 @@ async def search_command_handler(event):
                     else:
                         await event.respond(f"😕 Could not find Episode {requested_episode} for this season, but found the season pack.")
                 
-                episodes_text = "\n".join(f"- Episode {ep['episode_number']}: `{ep['dl_protect_link']}`" for ep in best_result['episode_data'])
+                episodes_text = "\n".join(f"- Episode {ep['episode_number']}: [🔗 Link]({ep['dl_protect_link']})" for ep in best_result['episode_data'])
                 reply = (
-                    f"📺 **{best_result['title']} - Season {best_result['season']}**\n\n"
+                    f"📺 **[{best_result['title']} - Season {best_result['season']}]({best_result['url']})**\n\n"
                     f"- **Quality:** {best_result['quality']}\n"
                     f"- **Language:** {best_result['language']}\n"
                     f"- **Score:** {best_result['rating_score']}\n\n"
@@ -182,7 +195,7 @@ async def search_command_handler(event):
                 )
                 if len(reply) > 4096:
                     header = (
-                        f"📺 **{best_result['title']} - Season {best_result['season']}**\n\n"
+                        f"📺 **[{best_result['title']} - Season {best_result['season']}]({best_result['url']})**\n\n"
                         f"- **Quality:** {best_result['quality']}\n"
                         f"- **Language:** {best_result['language']}\n"
                         f"- **Score:** {best_result['rating_score']}\n\n"
@@ -192,15 +205,15 @@ async def search_command_handler(event):
                     part2 = f"**Episodes (Part 2):**\n"
                     
                     for ep in best_result['episode_data']:
-                        line = f"- Episode {ep['episode_number']}: `{ep['dl_protect_link']}`\n"
+                        line = f"- Episode {ep['episode_number']}: [🔗 Link]({ep['dl_protect_link']})\n"
                         if len(part1) + len(line) < 4096:
                             part1 += line
                         else:
                             part2 += line
-                    await event.respond(part1)
-                    await event.respond(part2)
+                    await event.respond(part1, parse_mode='Markdown')
+                    await event.respond(part2, parse_mode='Markdown')
                 else:
-                    await event.respond(reply)
+                    await event.respond(reply, parse_mode='Markdown')
 
     except asyncio.TimeoutError:
         log.warning(f"Search conversation with '{sender_name}' timed out.")

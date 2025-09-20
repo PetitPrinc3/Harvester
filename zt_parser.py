@@ -8,6 +8,7 @@ import json
 import logging
 from bs4 import BeautifulSoup
 from thefuzz import fuzz
+from guessit import guessit
 
 log = logging.getLogger(__name__)
 
@@ -146,25 +147,35 @@ def select_best_movie(parser, results, requested_title):
         return None
 
     quality_preferences = ['hdlight 1080p', '4k light', 'hdlight', 'hd']
-    SIMILARITY_THRESHOLD = 75
+    SIMILARITY_THRESHOLD = 70
 
     scored_results = []
     for r in results:
-        title_score = fuzz.token_set_ratio(requested_title, r['title'])
+        title_score = fuzz.WRatio(requested_title, r['title'])
         if title_score < SIMILARITY_THRESHOLD:
+            print(title_score, requested_title, r['title'])
             continue
         
-        lang_lower = r['language'].lower()
-        if 'multi' in lang_lower and 'truefrench' in lang_lower:
+        guess = guessit(r['title'])
+        lang_score = 0
+        if 'language' in guess:
+            if 'multi' in guess['language']:
+                lang_score = 25
+            elif 'vo' in guess['language']:
+                lang_score = 20
+            elif 'truefrench' in guess['language']:
+                lang_score = 15
+            elif 'french' in guess['language']:
+                lang_score = 10
+        elif 'MULTI' in r['title']:
             lang_score = 25
-        elif 'multi' in lang_lower:
+        elif 'VO' in r['title']:
             lang_score = 20
-        elif 'truefrench' in lang_lower:
+        elif 'TRUEFRENCH' in r['title']:
             lang_score = 15
-        elif 'french' in lang_lower:
+        elif 'FRENCH' in r['title']:
             lang_score = 10
-        else:
-            lang_score = 0
+
 
         quality_score = 0
         result_quality_lower = r['quality'].lower()
@@ -210,12 +221,12 @@ def select_best_show(parser, results, requested_title, requested_season):
     if not results:
         return None
 
-    SIMILARITY_THRESHOLD = 85
-    quality_preferences = ['VOSTFR HD', 'VF HD', 'VOSTFR', 'VF', 'VO']
+    SIMILARITY_THRESHOLD = 70
+    quality_preferences = ['VOSTFR HD', 'VOSTFR', 'VO HD', 'VO', 'VF HD', 'VF']
 
     initial_candidates = []
     for r in results:
-        title_similarity = fuzz.partial_ratio(requested_title.lower(), r['title'].lower())
+        title_similarity = fuzz.WRatio(requested_title.lower(), ' - '.join((r['title'].lower().split(' - ')[:-1])))
         if title_similarity < SIMILARITY_THRESHOLD:
             continue
         season_match = re.search(r'saison\s*(\d+)', r['title'], re.IGNORECASE)
@@ -232,14 +243,18 @@ def select_best_show(parser, results, requested_title, requested_season):
     scored_candidates = []
     for candidate in top_candidates:
         log.info(f"  Checking candidate: {candidate['title']} ({candidate['quality']})")
-        title_score = fuzz.partial_ratio(requested_title.lower(), candidate['title'].lower())
+        title_score = fuzz.WRatio(requested_title.lower(), candidate['title'].lower())
         
-        lang_lower = candidate['language'].lower()
-        if 'vostfr' in lang_lower:
+        guess = guessit(candidate['title'])
+        lang_score = 0
+        if 'language' in guess:
+            if 'vostfr' in guess['language']:
+                lang_score = 25
+            elif 'vf' in guess['language']:
+                lang_score = 10
+        elif 'VOSTFR' in candidate['title']:
             lang_score = 25
-        elif 'vo' in lang_lower:
-            lang_score = 20
-        elif 'vf' in lang_lower:
+        elif 'VF' in candidate['title']:
             lang_score = 10
         else:
             lang_score = 0
@@ -254,6 +269,7 @@ def select_best_show(parser, results, requested_title, requested_season):
         if episode_data and episode_data['links']:
             completeness_score = 10
             episode_numbers = sorted(episode_data['links'].keys())
+            episode_numbers = [e for e in episode_numbers if e != 0]
             is_consecutive = (episode_numbers == list(range(1, len(episode_numbers) + 1)))
             if is_consecutive:
                 completeness_score = 20
