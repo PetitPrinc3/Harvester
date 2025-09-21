@@ -52,8 +52,7 @@ Before running the application, you need to provide your Telegram and LDAP crede
     # LDAP Configuration
     LDAP_SERVER=ldaps://your-ldap-server.com
     LDAP_PORT=636
-    LDAP_BASE_DN=ou=users,dc=example,dc=com
-    LDAP_USER_DN=uid={username},ou=users,dc=example,dc=com
+    USER_DOMAIN=arthuretchloe.fr
 
     # Optional: Specify a filename for the log file
     LOG_FILENAME=harvester.log

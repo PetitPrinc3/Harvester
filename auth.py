@@ -4,6 +4,8 @@ import ssl
 from flask_login import LoginManager, UserMixin
 from ldap3 import Server, Connection, ALL, Tls
 
+log = logging.getLogger(__name__)
+
 login_manager = LoginManager()
 
 class User(UserMixin):
