@@ -1,6 +1,8 @@
+import logging
 import os
+import ssl
 from flask_login import LoginManager, UserMixin
-from ldap3 import Server, Connection, ALL
+from ldap3 import Server, Connection, ALL, Tls
 
 login_manager = LoginManager()
 
@@ -13,12 +15,22 @@ def load_user(user_id):
     return User(user_id)
 
 def authenticate_user(username, password):
-    server = Server(os.getenv('LDAP_SERVER'), get_info=ALL)
-    user_dn = os.getenv('LDAP_USER_DN').format(username=username)
+
+    server = Server(
+        os.getenv("LDAP_SERVER"),
+        use_ssl=True,
+        get_info=ALL,
+    )
+
+    domain = os.getenv("USER_DOMAIN")
+
     try:
-        conn = Connection(server, user=user_dn, password=password, auto_bind=True)
-        if conn.bind():
-            return True
+        # auto_bind ensures bind happens immediately
+        conn = Connection(server, user='{}@{}'.format(username, domain), password=password, auto_bind=True)
+        log.info(f"LDAP authentication successful for user {username}.")
+        conn.unbind()  # cleanup
+        return True
     except Exception as e:
-        print(f"LDAP authentication failed: {e}")
-    return False
+        log.warning(f"LDAP authentication failed: {e}")
+        return False
+

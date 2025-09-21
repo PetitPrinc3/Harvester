@@ -59,7 +59,21 @@ Before running the application, you need to provide your Telegram and LDAP crede
     LOG_FILENAME=harvester.log
     ```
 
-### 2. Running with Docker (Recommended)
+### 2. Create a Telegram Session
+
+The application needs a `.session` file to connect to your Telegram account and monitor the channel for new links.
+
+1.  **Run the Setup Script**:
+    ```sh
+    python setup.py
+    ```
+
+2.  **Follow the Prompts**:
+    The script will prompt you for your phone number, the code you receive from Telegram, and your two-factor authentication password if you have one enabled.
+
+    This will create a `telegram_session.session` file in the root of the project. **This file is ignored by git, so your session is safe.**
+
+### 3. Running with Docker (Recommended)
 
 1.  **Build the Docker Image**:
     ```sh
@@ -74,6 +88,7 @@ Before running the application, you need to provide your Telegram and LDAP crede
       -p 5000:5000 \
       -v ./downloads:/app/downloads \
       -v ./database.db:/app/database.db \
+      -v ./telegram_session.session:/app/telegram_session.session \
       --env-file .env \
       --name harvester-app \
       --restart=unless-stopped \
@@ -83,11 +98,12 @@ Before running the application, you need to provide your Telegram and LDAP crede
     -   `-p 5000:5000`: Maps the container's port 5000 to your host's port 5000.
     -   `-v ./downloads:/app/downloads`: Mounts a local `downloads` folder to store completed files.
     -   `-v ./database.db:/app/database.db`: Mounts the SQLite database file locally for persistence.
+    -   `-v ./telegram_session.session:/app/telegram_session.session`: Mounts the Telegram session file.
     -   `--env-file .env`: Loads the environment variables from your `.env` file.
     -   `--name harvester-app`: Assigns a convenient name to the container.
     -   `--restart=unless-stopped`: Ensures the container automatically restarts on boot or if it crashes.
 
-### 3. Running Locally (Without Docker)
+### 4. Running Locally (Without Docker)
 
 1.  **Create a Virtual Environment**:
     ```sh

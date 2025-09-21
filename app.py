@@ -6,7 +6,8 @@ import os
 from bs4 import BeautifulSoup
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 from flask_bootstrap import Bootstrap4
-from flask_wtf import FlaskForm, CSRFProtect
+from flask_wtf import FlaskForm
+from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
 from wtforms import StringField, SubmitField, TextAreaField, PasswordField
 from wtforms.validators import DataRequired
@@ -54,9 +55,9 @@ logging.getLogger("werkzeug").addFilter(ApiQueueLogFilter())
 
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.urandom(24)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 Bootstrap4(app)
-CSRFProtect(app)
+csrf = CSRFProtect(app)
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
@@ -77,7 +78,7 @@ csp = {
         'cdn.jsdelivr.net'
     ]
 }
-Talisman(app, content_security_policy=csp, force_https=False)
+Talisman(app, content_security_policy=csp, force_https=False, session_cookie_secure=False)
 
 database.init_db()
 

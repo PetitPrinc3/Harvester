@@ -34,15 +34,15 @@ def parse_search_query(query_text):
     season, episode = None, None
 
     # Find and extract season number (e.g., "season 3", "saison 3", "s03")
-    season_match = re.search(r'\b(saison|season|s)\s*(\d{1,2})\b', title, re.IGNORECASE)
+    season_match = re.search(r'(?:saison|season|so|s)\s*?(\d{1,2})\b', title, re.IGNORECASE)
     if season_match:
-        season = int(season_match.group(2))
+        season = int(season_match.group(1))
         title = title.replace(season_match.group(0), '')
 
     # Find and extract episode number (e.g., "episode 2", "épisode 2", "ep2", "e02")
-    episode_match = re.search(r'\b(épisode|episode|ep|e)\s*(\d{1,2})\b', title, re.IGNORECASE)
+    episode_match = re.search(r'(?:épisode|episode|ep|e)\s*?(\d{1,2})\b', title, re.IGNORECASE)
     if episode_match:
-        episode = int(episode_match.group(2))
+        episode = int(episode_match.group(1))
         title = title.replace(episode_match.group(0), '')
 
     # Clean up the title by removing extra spaces
